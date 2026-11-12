@@ -10,7 +10,6 @@ import android.content.Intent
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.util.Log
 import androidx.core.app.NotificationCompat
 
 class SensorMonitorService : Service() {
@@ -24,7 +23,7 @@ class SensorMonitorService : Service() {
         override fun run() {
             if (!running) return
             checkForegroundApp()
-            handler.postDelayed(this, 1500)
+            handler.postDelayed(this, 800) // faster poll for precision
         }
     }
 
@@ -46,7 +45,6 @@ class SensorMonitorService : Service() {
     override fun onDestroy() {
         running = false
         handler.removeCallbacks(pollRunnable)
-        // Restore sensors if we turned them off
         if (sensorsCurrentlyOff) {
             ShizukuSensorController.setSensorPrivacy(false)
         }
@@ -62,11 +60,16 @@ class SensorMonitorService : Service() {
     }
 
     private fun checkForegroundApp() {
-        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val end = System.currentTimeMillis()
-        val start = end - 1000 * 10
-        val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, start, end)
-        val top = stats.maxByOrNull { it.lastTimeUsed }?.packageName
+        // Prefer precise Shizuku dumpsys
+        var top = ShizukuSensorController.getFocusedPackage()
+        if (top == null) {
+            // Fallback to UsageStats
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val end = System.currentTimeMillis()
+            val start = end - 5000
+            val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, start, end)
+            top = stats.maxByOrNull { it.lastTimeUsed }?.packageName
+        }
         if (top == lastTopPackage) return
         lastTopPackage = top
 
@@ -74,7 +77,7 @@ class SensorMonitorService : Service() {
         if (shouldBlock && !sensorsCurrentlyOff) {
             ShizukuSensorController.setSensorPrivacy(true)
             sensorsCurrentlyOff = true
-            updateNotification("已封鎖感測器：$top")
+            updateNotification("已封鎖：$top")
         } else if (!shouldBlock && sensorsCurrentlyOff) {
             ShizukuSensorController.setSensorPrivacy(false)
             sensorsCurrentlyOff = false
