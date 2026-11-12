@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
         val names = installedRecommended.joinToString("\n") { "• ${it.label}" }
         AlertDialog.Builder(this)
             .setTitle("推薦開啟屏蔽")
-            .setMessage("偵測到以下國產購物／影片 App，建議預設開啟感測器屏蔽：\n\n$names\n\n是否一鍵加入封鎖名單？")
+            .setMessage("偵測到以下國產購物、影片與地圖 App，建議預設開啟感測器屏蔽：\n\n$names\n\n是否一鍵加入封鎖名單？")
             .setPositiveButton("一鍵開啟") { _, _ ->
                 installedRecommended.forEach { blocked.add(it.packageName) }
                 saveBlocked()
