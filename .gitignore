@@ -25,3 +25,5 @@ captures/
 *.iml
 .gradle/
 build/
+keystore.jks
+*.jks
