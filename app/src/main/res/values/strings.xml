@@ -12,7 +12,11 @@
     <string name="status_shizuku_error_unknown">unknown error</string>
     <string name="status_mode_normal">SensorService: NORMAL (all apps can read sensors)</string>
     <string name="status_mode_restricted">SensorService: RESTRICTED (only %1$s may read sensors)</string>
-    <string name="status_mode_unknown">SensorService: unknown (needs a running Shizuku)</string>
+    <string name="status_mode_unknown">SensorService: unknown (cannot read the mode line)</string>
+    <string name="status_mode_unknown_need_shizuku">SensorService: unknown (needs a running Shizuku)</string>
+    <string name="status_mode_unknown_with_error">SensorService: unknown (cannot read the mode line: %1$s)</string>
+    <string name="status_mode_normal_unconfirmed">SensorService: restored (mode line not readable)</string>
+    <string name="status_mode_restricted_unconfirmed">SensorService: restricted (mode line not readable)</string>
     <string name="status_privacy_fallback">A camera/microphone privacy fallback was used; motion sensors may still be readable on this device.</string>
     <string name="status_monitoring_on">Monitoring: on</string>
     <string name="status_monitoring_off">Monitoring: off</string>

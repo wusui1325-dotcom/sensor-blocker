@@ -21,20 +21,27 @@ import java.util.concurrent.atomic.AtomicReference
  * performed without starting a UserService process.
  */
 object SensorServiceDumper {
-    private const val READ_TIMEOUT_MS = 10_000L
+    const val DEFAULT_TIMEOUT_MS = 10_000L
+    const val CONFIRM_TIMEOUT_MS = 3_000L
 
-    fun dump(args: Array<String>, stopAtMode: Boolean, maxBytes: Int = BinderDumpReader.MAX_BYTES): String {
+    fun dump(
+        args: Array<String>,
+        stopAtMode: Boolean,
+        maxBytes: Int = BinderDumpReader.MAX_BYTES,
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS
+    ): String {
         val raw = SystemServiceHelper.getSystemService("sensorservice")
             ?: throw IllegalStateException("sensorservice missing")
         val binder = ShizukuBinderWrapper(raw)
-        return dumpBinder(binder, args, stopAtMode, maxBytes)
+        return dumpBinder(binder, args, stopAtMode, maxBytes, timeoutMs)
     }
 
     internal fun dumpBinder(
         binder: IBinder,
         args: Array<String>,
         stopAtMode: Boolean,
-        maxBytes: Int = BinderDumpReader.MAX_BYTES
+        maxBytes: Int = BinderDumpReader.MAX_BYTES,
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS
     ): String {
         val ends = ParcelFileDescriptor.createPipe()
         val readPfd = ends[0]
@@ -84,7 +91,7 @@ object SensorServiceDumper {
                 } catch (_: Exception) {
                 }
             }
-            if (!joinReader(reader)) {
+            if (!joinReader(reader, timeoutMs)) {
                 throw IllegalStateException("sensorservice dump timed out")
             }
             readerError.get()?.let { throw it }
@@ -106,8 +113,8 @@ object SensorServiceDumper {
         }
     }
 
-    private fun joinReader(reader: Thread): Boolean {
-        reader.join(READ_TIMEOUT_MS)
+    private fun joinReader(reader: Thread, timeoutMs: Long): Boolean {
+        reader.join(timeoutMs)
         return !reader.isAlive
     }
 }

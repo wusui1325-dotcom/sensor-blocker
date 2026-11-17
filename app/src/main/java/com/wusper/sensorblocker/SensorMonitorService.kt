@@ -179,8 +179,8 @@ class SensorMonitorService : Service() {
         if (ShizukuClient.isReady() && now - lastModeCheckAt >= MODE_RECHECK_MS) {
             lastModeCheckAt = now
             if (lastDesired != null && lastApplyOk) {
-                val mode = controller.queryMode()
-                if (!controller.matches(lastDesired!!, mode)) {
+                val parsed = controller.refreshModeLine()
+                if (ModeConfirmPolicy.shouldReapplyAfterRecheck(lastDesired!!, parsed)) {
                     lastApplyOk = false
                     force = true
                 }

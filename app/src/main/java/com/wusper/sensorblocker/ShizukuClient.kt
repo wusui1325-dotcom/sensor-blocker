@@ -406,9 +406,13 @@ object ShizukuClient {
         }
     }
 
-    fun dumpSensorservice(args: Array<String>, stopAtMode: Boolean): String {
+    fun dumpSensorservice(
+        args: Array<String>,
+        stopAtMode: Boolean,
+        timeoutMs: Long = SensorServiceDumper.DEFAULT_TIMEOUT_MS
+    ): String {
         synchronized(dumpLock) {
-            val text = SensorServiceDumper.dump(args, stopAtMode = stopAtMode)
+            val text = SensorServiceDumper.dump(args, stopAtMode = stopAtMode, timeoutMs = timeoutMs)
             if (text.isNotBlank() || SensorServiceModeParser.parse(text) !is SensorServiceMode.Unknown) {
                 dumpPathReady = true
                 lastDumpError = null

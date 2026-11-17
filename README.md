@@ -30,7 +30,7 @@ This README is in Simplified Chinese first, then English.
 
 ## 如何安装
 
-1. 从本仓库的 [Releases](https://github.com/wusui1325-dotcom/sensor-blocker/releases) 下载 `sensor-blocker-1.0.5.apk` 并安装。若系统提示「未知来源」，按提示允许。
+1. 从本仓库的 [Releases](https://github.com/wusui1325-dotcom/sensor-blocker/releases) 下载 `sensor-blocker-1.0.6.apk` 并安装。若系统提示「未知来源」，按提示允许。
 2. 安装并启动 Shizuku（见下一节）。
 3. 打开「传感屏蔽」。若 Shizuku 里已经打开本应用的授权，点「重新绑定服务」（不必再点「授权」）。授权完成后会自动绑定特权服务。然后打开「监控」。
 4. （可选）授予「使用情况访问」；若使用「列表屏蔽」，建议再打开无障碍中的「前台应用检测」，以便窗口一切换就生效。Android 13 及以上需要通知权限，用于前台服务常驻通知。

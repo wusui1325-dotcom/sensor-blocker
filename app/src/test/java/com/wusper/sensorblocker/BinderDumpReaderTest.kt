@@ -41,6 +41,31 @@ class BinderDumpReaderTest {
     }
 
     @Test
+    fun findsModeLineAfterStoredCapViaRollingWindow() {
+        val prefix = "S" + "ensor ".repeat(200)
+        val reader = SequentialReader(
+            listOf(
+                prefix,
+                "\nMode : RESTRICTED : com.wusper.sensortest\n",
+                "tail-should-drain-only\n"
+            )
+        )
+        val out = BinderDumpReader.read(
+            reader,
+            maxBytes = 64,
+            stopWhen = BinderDumpReader::hasModeLine,
+            windowChars = 256
+        )
+        assertTrue(out.contains("Mode : RESTRICTED : com.wusper.sensortest"))
+        assertFalse(out.contains("tail-should-drain-only"))
+        assertEquals(3, reader.reads)
+        assertEquals(
+            "com.wusper.sensortest",
+            (SensorServiceModeParser.parse(out) as SensorServiceMode.Restricted).packageName
+        )
+    }
+
+    @Test
     fun hasModeLineFalseUntilComplete() {
         assertFalse(BinderDumpReader.hasModeLine("Sensor List:\n"))
         assertFalse(BinderDumpReader.hasModeLine(""))

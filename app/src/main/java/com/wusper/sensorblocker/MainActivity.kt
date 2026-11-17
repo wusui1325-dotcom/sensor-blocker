@@ -356,14 +356,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindSensorMode(mode: SensorServiceMode) {
+        val ready = ShizukuClient.isReady()
         statusSensor.text = when (mode) {
-            is SensorServiceMode.Normal -> getString(R.string.status_mode_normal)
+            is SensorServiceMode.Normal -> {
+                if (mode.confirmed) getString(R.string.status_mode_normal)
+                else getString(R.string.status_mode_normal_unconfirmed)
+            }
             is SensorServiceMode.Restricted -> {
-                val pkg = mode.packageName ?: getString(R.string.app_name)
-                getString(R.string.status_mode_restricted, pkg)
+                if (mode.confirmed) {
+                    val pkg = mode.packageName ?: getString(R.string.app_name)
+                    getString(R.string.status_mode_restricted, pkg)
+                } else {
+                    getString(R.string.status_mode_restricted_unconfirmed)
+                }
             }
             is SensorServiceMode.DataInjection -> getString(R.string.status_mode_unknown)
-            is SensorServiceMode.Unknown -> getString(R.string.status_mode_unknown)
+            is SensorServiceMode.Unknown -> {
+                if (!ready) {
+                    getString(R.string.status_mode_unknown_need_shizuku)
+                } else {
+                    val err = ShizukuClient.lastDumpError
+                    if (err.isNullOrBlank()) getString(R.string.status_mode_unknown)
+                    else getString(R.string.status_mode_unknown_with_error, err)
+                }
+            }
         }
     }
 

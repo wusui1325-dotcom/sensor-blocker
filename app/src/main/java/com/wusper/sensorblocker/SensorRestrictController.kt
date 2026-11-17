@@ -15,22 +15,38 @@ class SensorRestrictController {
 
     private var lastDesired: DesiredState? = null
 
+    /**
+     * Reads the Mode line without treating an unreadable dump as a
+     * rollback of an already-applied command.
+     */
+    fun refreshModeLine(timeoutMs: Long = SensorServiceDumper.CONFIRM_TIMEOUT_MS): SensorServiceMode {
+        val parsed = readModeLine(timeoutMs)
+        if (parsed !is SensorServiceMode.Unknown) {
+            lastMode = parsed
+        }
+        return parsed
+    }
+
     fun queryMode(): SensorServiceMode {
-        if (!ShizukuClient.isReady()) {
-            lastMode = SensorServiceMode.Unknown
+        if (!ShizukuClient.isReady() && lastMode is SensorServiceMode.Unknown) {
             return lastMode
         }
-        val dumped = dumpOrNull(SensorCommands.queryDumpArgs(), stopAtMode = true)
+        refreshModeLine()
+        return lastMode
+    }
+
+    private fun readModeLine(timeoutMs: Long): SensorServiceMode {
+        if (!ShizukuClient.isReady()) return SensorServiceMode.Unknown
+        val dumped = dumpOrNull(
+            SensorCommands.queryDumpArgs(),
+            stopAtMode = true,
+            timeoutMs = timeoutMs
+        )
         var mode = SensorServiceModeParser.parse(dumped ?: "")
         if (mode is SensorServiceMode.Unknown && ShizukuClient.shell != null) {
             val grepped = ShizukuClient.exec(SensorCommands.dumpModeLine())
             mode = SensorServiceModeParser.parse(grepped.output)
-            if (mode is SensorServiceMode.Unknown) {
-                val full = ShizukuClient.exec(SensorCommands.dump())
-                mode = SensorServiceModeParser.parse(full.output)
-            }
         }
-        lastMode = mode
         return mode
     }
 
@@ -74,11 +90,10 @@ class SensorRestrictController {
             is DesiredState.RestrictTo -> SensorCommands.restrictDumpArgs(desired.packageName)
         }
         val dumpText = dumpOrNull(args, stopAtMode = false)
-        var dumpFailed = dumpText == null
         var resultOutput = dumpText.orEmpty()
-        var commandFailed = dumpFailed
+        var commandFailed = dumpText == null
 
-        if (dumpFailed && ShizukuClient.shell != null) {
+        if (commandFailed && ShizukuClient.shell != null) {
             val command = when (desired) {
                 is DesiredState.Normal ->
                     if (wantConfirm) SensorCommands.enableAndQueryMode() else SensorCommands.enable()
@@ -94,36 +109,24 @@ class SensorRestrictController {
             commandFailed = !result.isSuccess
         }
 
-        val confirm = ApplyLoopPolicy.shouldConfirmMode(
-            force = force,
-            firstApplyForDesired = firstForDesired,
-            commandFailed = commandFailed
-        )
-        var mode: SensorServiceMode = SensorServiceModeParser.parse(resultOutput)
-        if (confirm) {
-            if (mode is SensorServiceMode.Unknown) {
-                mode = queryMode()
-            } else {
-                lastMode = mode
-            }
-        } else if (!commandFailed && lastMode !is SensorServiceMode.Unknown) {
-            mode = when (desired) {
-                is DesiredState.Normal -> SensorServiceMode.Normal
-                is DesiredState.RestrictTo -> SensorServiceMode.Restricted(desired.packageName)
-            }
-            lastMode = mode
+        var parsed = SensorServiceModeParser.parse(resultOutput)
+        if (!commandFailed && parsed is SensorServiceMode.Unknown && wantConfirm) {
+            // Best-effort Mode line only; a timeout must not fail the command.
+            parsed = readModeLine(SensorServiceDumper.CONFIRM_TIMEOUT_MS)
         }
 
-        val ok = matches(desired, mode)
-        if (ok) {
+        val outcome = ModeConfirmPolicy.afterCommand(desired, commandSucceeded = !commandFailed, parsed)
+        lastMode = outcome.mode
+        if (outcome.applied) {
             if (desired is DesiredState.Normal) {
                 usedPrivacyFallback = false
             }
+            lastError = if (outcome.confirmed) null else "mode-line-unreadable"
             return true
         }
 
-        lastError = "restrict-unconfirmed"
-        Log.w(TAG, "SensorService command did not reach the expected mode: $lastError mode=$mode")
+        lastError = "restrict-failed"
+        Log.w(TAG, "SensorService command failed: $lastError mode=$parsed")
 
         if (ApplyLoopPolicy.shouldAttemptPrivacyFallback(
                 desired,
@@ -146,9 +149,13 @@ class SensorRestrictController {
         return false
     }
 
-    private fun dumpOrNull(args: Array<String>, stopAtMode: Boolean): String? {
+    private fun dumpOrNull(
+        args: Array<String>,
+        stopAtMode: Boolean,
+        timeoutMs: Long = SensorServiceDumper.DEFAULT_TIMEOUT_MS
+    ): String? {
         return try {
-            ShizukuClient.dumpSensorservice(args, stopAtMode = stopAtMode)
+            ShizukuClient.dumpSensorservice(args, stopAtMode = stopAtMode, timeoutMs = timeoutMs)
         } catch (t: Exception) {
             Log.w(TAG, "sensorservice dump failed", t)
             null
@@ -174,12 +181,7 @@ class SensorRestrictController {
     }
 
     fun matches(desired: DesiredState, mode: SensorServiceMode): Boolean {
-        return when (desired) {
-            is DesiredState.Normal -> mode is SensorServiceMode.Normal
-            is DesiredState.RestrictTo ->
-                mode is SensorServiceMode.Restricted &&
-                    (mode.packageName == null || mode.packageName == desired.packageName)
-        }
+        return ModeConfirmPolicy.matches(desired, mode)
     }
 
     companion object {

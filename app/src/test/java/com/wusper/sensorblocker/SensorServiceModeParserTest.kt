@@ -13,7 +13,7 @@ class SensorServiceModeParserTest {
             Mode : NORMAL
             Sensor List:
         """.trimIndent()
-        assertEquals(SensorServiceMode.Normal, SensorServiceModeParser.parse(dump))
+        assertEquals(SensorServiceMode.Normal(), SensorServiceModeParser.parse(dump))
     }
 
     @Test
@@ -46,5 +46,56 @@ class SensorServiceModeParserTest {
     fun firstModeLineWins() {
         val dump = "Mode : RESTRICTED : com.foo\nMode : NORMAL\n"
         assertTrue(SensorServiceModeParser.parse(dump) is SensorServiceMode.Restricted)
+    }
+
+    @Test
+    fun parsesModeWithoutSpaceBeforeColon() {
+        assertEquals(SensorServiceMode.Normal(), SensorServiceModeParser.parse("Mode: NORMAL"))
+        assertEquals(
+            SensorServiceMode.Restricted("com.wusper.sensortest"),
+            SensorServiceModeParser.parse("Mode:RESTRICTED:com.wusper.sensortest")
+        )
+    }
+
+    @Test
+    fun parsesParenthesesPackage() {
+        assertEquals(
+            SensorServiceMode.Restricted("com.wusper.sensortest"),
+            SensorServiceModeParser.parse("Mode : RESTRICTED (com.wusper.sensortest)")
+        )
+    }
+
+    @Test
+    fun parsesOperatingModeAndRestrictedTo() {
+        val dump = """
+            Operating Mode : RESTRICTED
+            Restricted to com.wusper.sensorblocker
+        """.trimIndent()
+        assertEquals(
+            SensorServiceMode.Restricted("com.wusper.sensorblocker"),
+            SensorServiceModeParser.parse(dump)
+        )
+    }
+
+    @Test
+    fun parsesRestrictedPackageField() {
+        val dump = "Mode: Restricted\nRestricted package: com.android.systemui\n"
+        assertEquals(
+            SensorServiceMode.Restricted("com.android.systemui"),
+            SensorServiceModeParser.parse(dump)
+        )
+    }
+
+    @Test
+    fun parsesRestrictedToAlone() {
+        assertEquals(
+            SensorServiceMode.Restricted("com.foo.bar"),
+            SensorServiceModeParser.parse("restricted to package com.foo.bar")
+        )
+    }
+
+    @Test
+    fun parsesDataInjectionWithSpace() {
+        assertEquals(SensorServiceMode.DataInjection, SensorServiceModeParser.parse("Mode : DATA INJECTION"))
     }
 }

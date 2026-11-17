@@ -12,7 +12,11 @@
     <string name="status_shizuku_error_unknown">未知錯誤</string>
     <string name="status_mode_normal">SensorService：正常（所有應用可讀取感測器）</string>
     <string name="status_mode_restricted">SensorService：已限制（僅 %1$s 可讀取感測器）</string>
-    <string name="status_mode_unknown">SensorService：未知（需要已執行的 Shizuku）</string>
+    <string name="status_mode_unknown">SensorService：未知（無法讀取模式行）</string>
+    <string name="status_mode_unknown_need_shizuku">SensorService：未知（需要已執行的 Shizuku）</string>
+    <string name="status_mode_unknown_with_error">SensorService：未知（無法讀取模式行：%1$s）</string>
+    <string name="status_mode_normal_unconfirmed">SensorService：已恢復（狀態行讀不到）</string>
+    <string name="status_mode_restricted_unconfirmed">SensorService：已限制（狀態行讀不到）</string>
     <string name="status_privacy_fallback">已使用相機／麥克風隱私開關作為後備，此裝置上運動感測器仍可能可讀取。</string>
     <string name="status_monitoring_on">監控：開</string>
     <string name="status_monitoring_off">監控：關</string>
