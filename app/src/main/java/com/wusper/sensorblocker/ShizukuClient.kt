@@ -12,6 +12,7 @@ import com.wusper.sensorblocker.shell.IShellService
 import com.wusper.sensorblocker.shell.ShellUserService
 import rikka.shizuku.Shizuku
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -35,7 +36,15 @@ object ShizukuClient {
         private set
     @Volatile var lastPermissionError: String? = null
         private set
+    @Volatile var dumpPathReady: Boolean = false
+        private set
+    @Volatile var lastDumpError: String? = null
+        private set
     private var appContext: Context? = null
+    private val dumpLock = Any()
+    private val probeExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "sensor-dump-probe").apply { isDaemon = true }
+    }
 
     private val bindTimeoutRunnable = Runnable { onBindTimeout() }
     private val bindRetryRunnable = Runnable { bindOnMain(force = false) }
@@ -44,6 +53,7 @@ object ShizukuClient {
         lastPermissionError = null
         permissionState()
         notifyChanged()
+        probeDumpPathAsync()
         bindIfPossible()
     }
 
@@ -53,6 +63,8 @@ object ShizukuClient {
         bindStartedAt = 0L
         cancelBindTimers()
         lastBindError = "Shizuku binder died"
+        dumpPathReady = false
+        lastDumpError = "Shizuku binder died"
         releaseWaiters()
         notifyChanged()
     }
@@ -60,6 +72,7 @@ object ShizukuClient {
     private val permissionListener = Shizuku.OnRequestPermissionResultListener { _, _ ->
         lastPermissionError = null
         notifyChanged()
+        probeDumpPathAsync()
         bindIfPossible()
     }
 
@@ -94,6 +107,7 @@ object ShizukuClient {
         Shizuku.addBinderReceivedListenerSticky(binderReceived)
         Shizuku.addBinderDeadListener(binderDead)
         Shizuku.addRequestPermissionResultListener(permissionListener)
+        probeDumpPathAsync()
         bindIfPossible()
     }
 
@@ -150,7 +164,7 @@ object ShizukuClient {
 
     fun hasPermission(): Boolean = permissionState() == ShizukuPermissionState.GRANTED
 
-    fun isReady(): Boolean = hasPermission() && shell != null
+    fun isReady(): Boolean = ShizukuReadyPolicy.isReady(hasPermission(), dumpPathReady, shell != null)
 
     fun snapshot(): ShizukuSnapshot {
         val now = SystemClock.elapsedRealtime()
@@ -163,7 +177,9 @@ object ShizukuClient {
             shellConnected = shell != null,
             bindInProgress = inProgress,
             lastBindError = lastBindError,
-            lastPermissionError = lastPermissionError
+            lastPermissionError = lastPermissionError,
+            dumpPathReady = dumpPathReady,
+            lastDumpError = lastDumpError
         )
     }
 
@@ -174,6 +190,7 @@ object ShizukuClient {
             if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
                 Shizuku.requestPermission(REQUEST_CODE_PERMISSION)
             } else {
+                probeDumpPathAsync()
                 bindIfPossible(force = true)
             }
         } catch (t: Throwable) {
@@ -350,6 +367,53 @@ object ShizukuClient {
         try {
             shell?.cancel()
         } catch (_: Exception) {
+        }
+    }
+
+    fun probeDumpPathAsync() {
+        if (!hasPermission()) return
+        if (dumpPathReady) return
+        probeExecutor.execute {
+            probeDumpPath()
+            notifyChanged()
+        }
+    }
+
+    fun probeDumpPath(): Boolean {
+        if (!hasPermission()) {
+            dumpPathReady = false
+            return false
+        }
+        if (dumpPathReady) return true
+        synchronized(dumpLock) {
+            if (dumpPathReady) return true
+            return try {
+                val text = SensorServiceDumper.dump(SensorCommands.queryDumpArgs(), stopAtMode = true)
+                val parsed = SensorServiceModeParser.parse(text)
+                if (text.isNotBlank() || parsed !is SensorServiceMode.Unknown) {
+                    dumpPathReady = true
+                    lastDumpError = null
+                    true
+                } else {
+                    lastDumpError = "empty sensorservice dump"
+                    false
+                }
+            } catch (t: Throwable) {
+                lastDumpError = shortError(t)
+                dumpPathReady = false
+                false
+            }
+        }
+    }
+
+    fun dumpSensorservice(args: Array<String>, stopAtMode: Boolean): String {
+        synchronized(dumpLock) {
+            val text = SensorServiceDumper.dump(args, stopAtMode = stopAtMode)
+            if (text.isNotBlank() || SensorServiceModeParser.parse(text) !is SensorServiceMode.Unknown) {
+                dumpPathReady = true
+                lastDumpError = null
+            }
+            return text
         }
     }
 

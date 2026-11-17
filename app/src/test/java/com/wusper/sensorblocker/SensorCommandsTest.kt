@@ -54,6 +54,22 @@ class SensorCommandsTest {
     }
 
     @Test
+    fun dumpArgsMatchPublicSensorserviceInterface() {
+        assertTrue(
+            SensorCommands.restrictDumpArgs("com.wusper.sensortest").contentEquals(
+                arrayOf("restrict", "com.wusper.sensortest")
+            )
+        )
+        assertTrue(SensorCommands.enableDumpArgs().contentEquals(arrayOf("enable")))
+        assertTrue(SensorCommands.queryDumpArgs().isEmpty())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun restrictDumpArgsRejectsInjection() {
+        SensorCommands.restrictDumpArgs("com.foo; rm -rf /")
+    }
+
+    @Test
     fun fallbackCodesAreVersionAware() {
         assertEquals(
             listOf("service call sensor_privacy 4 i32 1"),

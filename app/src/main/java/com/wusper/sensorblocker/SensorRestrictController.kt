@@ -20,18 +20,23 @@ class SensorRestrictController {
             lastMode = SensorServiceMode.Unknown
             return lastMode
         }
-        val grepped = ShizukuClient.exec(SensorCommands.dumpModeLine())
-        var mode = SensorServiceModeParser.parse(grepped.output)
-        if (mode is SensorServiceMode.Unknown) {
-            val full = ShizukuClient.exec(SensorCommands.dump())
-            mode = SensorServiceModeParser.parse(full.output)
+        val dumped = dumpOrNull(SensorCommands.queryDumpArgs(), stopAtMode = true)
+        var mode = SensorServiceModeParser.parse(dumped ?: "")
+        if (mode is SensorServiceMode.Unknown && ShizukuClient.shell != null) {
+            val grepped = ShizukuClient.exec(SensorCommands.dumpModeLine())
+            mode = SensorServiceModeParser.parse(grepped.output)
+            if (mode is SensorServiceMode.Unknown) {
+                val full = ShizukuClient.exec(SensorCommands.dump())
+                mode = SensorServiceModeParser.parse(full.output)
+            }
         }
         lastMode = mode
         return mode
     }
 
     fun getFocusedPackage(): String? {
-        if (!ShizukuClient.isReady()) return null
+        // Window/activity dumpsys stays a UserService fallback only.
+        if (ShizukuClient.shell == null) return null
         val window = ShizukuClient.exec(SensorCommands.focusedWindow())
         FocusedPackageParser.parse(window.output)?.let { return it }
         val activity = ShizukuClient.exec(SensorCommands.resumedActivity())
@@ -59,35 +64,49 @@ class SensorRestrictController {
             firstApplyForDesired = firstForDesired,
             commandFailed = false
         )
-        val command = when (desired) {
-            is DesiredState.Normal ->
-                if (wantConfirm) SensorCommands.enableAndQueryMode() else SensorCommands.enable()
-            is DesiredState.RestrictTo -> {
-                if (!SensorCommands.isSafePackageName(desired.packageName)) {
-                    lastError = "unsafe-package"
-                    return false
-                }
-                if (wantConfirm) {
-                    SensorCommands.restrictAndQueryMode(desired.packageName)
-                } else {
-                    SensorCommands.restrict(desired.packageName)
-                }
-            }
+        if (desired is DesiredState.RestrictTo && !SensorCommands.isSafePackageName(desired.packageName)) {
+            lastError = "unsafe-package"
+            return false
         }
-        val result = ShizukuClient.exec(command)
+
+        val args = when (desired) {
+            is DesiredState.Normal -> SensorCommands.enableDumpArgs()
+            is DesiredState.RestrictTo -> SensorCommands.restrictDumpArgs(desired.packageName)
+        }
+        val dumpText = dumpOrNull(args, stopAtMode = false)
+        var dumpFailed = dumpText == null
+        var resultOutput = dumpText.orEmpty()
+        var commandFailed = dumpFailed
+
+        if (dumpFailed && ShizukuClient.shell != null) {
+            val command = when (desired) {
+                is DesiredState.Normal ->
+                    if (wantConfirm) SensorCommands.enableAndQueryMode() else SensorCommands.enable()
+                is DesiredState.RestrictTo ->
+                    if (wantConfirm) {
+                        SensorCommands.restrictAndQueryMode(desired.packageName)
+                    } else {
+                        SensorCommands.restrict(desired.packageName)
+                    }
+            }
+            val result = ShizukuClient.exec(command)
+            resultOutput = result.output
+            commandFailed = !result.isSuccess
+        }
+
         val confirm = ApplyLoopPolicy.shouldConfirmMode(
             force = force,
             firstApplyForDesired = firstForDesired,
-            commandFailed = !result.isSuccess
+            commandFailed = commandFailed
         )
-        var mode: SensorServiceMode = SensorServiceModeParser.parse(result.output)
+        var mode: SensorServiceMode = SensorServiceModeParser.parse(resultOutput)
         if (confirm) {
             if (mode is SensorServiceMode.Unknown) {
                 mode = queryMode()
             } else {
                 lastMode = mode
             }
-        } else if (result.isSuccess && lastMode !is SensorServiceMode.Unknown) {
+        } else if (!commandFailed && lastMode !is SensorServiceMode.Unknown) {
             mode = when (desired) {
                 is DesiredState.Normal -> SensorServiceMode.Normal
                 is DesiredState.RestrictTo -> SensorServiceMode.Restricted(desired.packageName)
@@ -103,7 +122,7 @@ class SensorRestrictController {
             return true
         }
 
-        lastError = "restrict-unconfirmed exit=${result.exitCode}"
+        lastError = "restrict-unconfirmed"
         Log.w(TAG, "SensorService command did not reach the expected mode: $lastError mode=$mode")
 
         if (ApplyLoopPolicy.shouldAttemptPrivacyFallback(
@@ -114,6 +133,7 @@ class SensorRestrictController {
         ) {
             val fallbacks = SensorCommands.fallbackPrivacyCommands(true, Build.VERSION.SDK_INT)
             for (cmd in fallbacks) {
+                if (ShizukuClient.shell == null) break
                 val r = ShizukuClient.exec(cmd)
                 if (r.isSuccess) {
                     usedPrivacyFallback = true
@@ -126,7 +146,21 @@ class SensorRestrictController {
         return false
     }
 
+    private fun dumpOrNull(args: Array<String>, stopAtMode: Boolean): String? {
+        return try {
+            ShizukuClient.dumpSensorservice(args, stopAtMode = stopAtMode)
+        } catch (t: Exception) {
+            Log.w(TAG, "sensorservice dump failed", t)
+            null
+        }
+    }
+
     private fun revertPrivacyFallback() {
+        if (ShizukuClient.shell == null) {
+            usedPrivacyFallback = false
+            lastError = null
+            return
+        }
         val fallbacks = SensorCommands.fallbackPrivacyCommands(false, Build.VERSION.SDK_INT)
         for (cmd in fallbacks) {
             try {

@@ -150,6 +150,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        ShizukuClient.probeDumpPathAsync()
         ShizukuClient.bindIfPossible()
         maybeResumeMonitoring()
         refreshStatus()
@@ -233,6 +234,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun reallyStartMonitoring() {
+        ShizukuClient.probeDumpPathAsync()
         ShizukuClient.bindIfPossible()
         SensorMonitorService.startSafely(this)
         refreshStatus()
@@ -242,6 +244,7 @@ class MainActivity : AppCompatActivity() {
     private fun maybeResumeMonitoring() {
         if (!AppPreferences.isMonitoringEnabled(this) || SensorMonitorService.isRunning) return
         if (!ShizukuClient.isReady()) {
+            ShizukuClient.probeDumpPathAsync()
             ShizukuClient.bindIfPossible()
             return
         }
@@ -271,7 +274,8 @@ class MainActivity : AppCompatActivity() {
             ShizukuClient.requestPermission()
             refreshStatus()
         } else {
-            // Already authorized in Shizuku: bind immediately instead of looking like a no-op.
+            // Already authorized: probe the dump path and optionally retry UserService.
+            ShizukuClient.probeDumpPathAsync()
             ShizukuClient.bindIfPossible(force = true)
             refreshStatus()
         }
@@ -289,6 +293,10 @@ class MainActivity : AppCompatActivity() {
             ShizukuUiState.BIND_FAILED -> getString(
                 R.string.status_shizuku_bind_failed,
                 snapshot.lastBindError ?: unknownReason
+            )
+            ShizukuUiState.DUMP_FAILED -> getString(
+                R.string.status_shizuku_dump_failed,
+                snapshot.lastDumpError ?: unknownReason
             )
             ShizukuUiState.PERMISSION_ERROR -> getString(
                 R.string.status_shizuku_permission_error,

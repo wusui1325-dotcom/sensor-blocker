@@ -13,6 +13,7 @@ enum class ShizukuUiState {
     PERMISSION_ERROR,
     BINDING,
     BIND_FAILED,
+    DUMP_FAILED,
     READY
 }
 
@@ -22,7 +23,9 @@ data class ShizukuSnapshot(
     val shellConnected: Boolean,
     val bindInProgress: Boolean,
     val lastBindError: String?,
-    val lastPermissionError: String?
+    val lastPermissionError: String?,
+    val dumpPathReady: Boolean = false,
+    val lastDumpError: String? = null
 )
 
 /**
@@ -37,7 +40,9 @@ object ShizukuUiStatus {
             ShizukuPermissionState.CHECK_FAILED -> ShizukuUiState.PERMISSION_ERROR
             ShizukuPermissionState.DENIED -> ShizukuUiState.NEED_PERMISSION
             ShizukuPermissionState.GRANTED -> when {
-                snapshot.shellConnected -> ShizukuUiState.READY
+                snapshot.dumpPathReady || snapshot.shellConnected -> ShizukuUiState.READY
+                snapshot.lastDumpError != null && !snapshot.bindInProgress ->
+                    ShizukuUiState.DUMP_FAILED
                 snapshot.lastBindError != null && !snapshot.bindInProgress ->
                     ShizukuUiState.BIND_FAILED
                 else -> ShizukuUiState.BINDING

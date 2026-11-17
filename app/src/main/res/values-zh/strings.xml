@@ -7,6 +7,7 @@
     <string name="status_shizuku_disconnected">Shizuku：未连接</string>
     <string name="status_shizuku_binding">Shizuku：已授权，正在连接特权服务…</string>
     <string name="status_shizuku_bind_failed">Shizuku：已授权，但特权服务绑定失败（%1$s）</string>
+    <string name="status_shizuku_dump_failed">Shizuku：已授权，但无法通过 SensorService 套用限制（%1$s）</string>
     <string name="status_shizuku_permission_error">Shizuku：已连接，但权限检查失败（%1$s）</string>
     <string name="status_shizuku_error_unknown">未知错误</string>
     <string name="status_mode_normal">SensorService：正常（所有应用可读传感器）</string>

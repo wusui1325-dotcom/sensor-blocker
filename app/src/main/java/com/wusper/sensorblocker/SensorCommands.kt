@@ -33,6 +33,16 @@ object SensorCommands {
         return "dumpsys sensorservice enable; " + dumpModeLine()
     }
 
+    /** Arguments for IBinder.dump on the sensorservice binder (no shell). */
+    fun restrictDumpArgs(packageName: String): Array<String> {
+        require(isSafePackageName(packageName)) { "Invalid package name" }
+        return arrayOf("restrict", packageName)
+    }
+
+    fun enableDumpArgs(): Array<String> = arrayOf("enable")
+
+    fun queryDumpArgs(): Array<String> = emptyArray()
+
     fun focusedWindow(): String =
         "dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp|mFocusedWindow'"
 

@@ -199,12 +199,10 @@ class SensorMonitorService : Service() {
     private fun applyPolicy(reason: String, force: Boolean = false) {
         if (!running && reason != "start") return
         if (!ShizukuClient.isReady()) {
-            if (reason == "start") {
-                ShizukuClient.bindAndWait()
-            } else {
-                ShizukuClient.bindIfPossible()
-            }
+            ShizukuClient.probeDumpPath()
             if (!ShizukuClient.isReady()) {
+                // UserService is optional and must not block the dump path.
+                ShizukuClient.bindIfPossible()
                 handler.post { updateNotification(getString(R.string.notif_waiting_shizuku)) }
                 publishState()
                 return

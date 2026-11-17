@@ -10,8 +10,10 @@ class ShizukuUiStatusTest {
         shell: Boolean = false,
         binding: Boolean = false,
         bindError: String? = null,
-        permError: String? = null
-    ) = ShizukuSnapshot(binder, permission, shell, binding, bindError, permError)
+        permError: String? = null,
+        dump: Boolean = false,
+        dumpError: String? = null
+    ) = ShizukuSnapshot(binder, permission, shell, binding, bindError, permError, dump, dumpError)
 
     @Test
     fun disconnectedWhenBinderDown() {
@@ -44,6 +46,26 @@ class ShizukuUiStatusTest {
         assertEquals(
             ShizukuUiState.READY,
             ShizukuUiStatus.state(snap(shell = true))
+        )
+    }
+
+    @Test
+    fun dumpPathReadyWithoutUserServiceIsReady() {
+        assertEquals(
+            ShizukuUiState.READY,
+            ShizukuUiStatus.state(
+                snap(shell = false, bindError = "UserService did not connect", dump = true)
+            )
+        )
+    }
+
+    @Test
+    fun dumpFailureIsDistinctWhenPathNotReady() {
+        assertEquals(
+            ShizukuUiState.DUMP_FAILED,
+            ShizukuUiStatus.state(
+                snap(shell = false, binding = false, dumpError = "empty sensorservice dump")
+            )
         )
     }
 

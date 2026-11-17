@@ -7,6 +7,7 @@
     <string name="status_shizuku_disconnected">Shizuku: not connected</string>
     <string name="status_shizuku_binding">Shizuku: authorized, connecting to the privileged service…</string>
     <string name="status_shizuku_bind_failed">Shizuku: authorized, but the privileged service failed to start (%1$s)</string>
+    <string name="status_shizuku_dump_failed">Shizuku: authorized, but SensorService dump failed (%1$s)</string>
     <string name="status_shizuku_permission_error">Shizuku: connected, but the permission check failed (%1$s)</string>
     <string name="status_shizuku_error_unknown">unknown error</string>
     <string name="status_mode_normal">SensorService: NORMAL (all apps can read sensors)</string>
