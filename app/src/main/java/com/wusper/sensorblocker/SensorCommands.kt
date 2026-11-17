@@ -23,6 +23,16 @@ object SensorCommands {
 
     fun dumpModeLine(): String = "dumpsys sensorservice 2>/dev/null | grep -E 'Mode :'"
 
+    /** One shell invocation: apply restrict and print the Mode line for confirmation. */
+    fun restrictAndQueryMode(packageName: String): String {
+        require(isSafePackageName(packageName)) { "Invalid package name" }
+        return "dumpsys sensorservice restrict $packageName; " + dumpModeLine()
+    }
+
+    fun enableAndQueryMode(): String {
+        return "dumpsys sensorservice enable; " + dumpModeLine()
+    }
+
     fun focusedWindow(): String =
         "dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp|mFocusedWindow'"
 

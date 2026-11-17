@@ -24,7 +24,8 @@ import java.util.concurrent.TimeUnit
 
 class SensorMonitorService : Service() {
     private val handler = Handler(Looper.getMainLooper())
-    private val executor = Executors.newSingleThreadExecutor()
+    private val applyExecutor = Executors.newSingleThreadExecutor()
+    private val pollExecutor = Executors.newSingleThreadExecutor()
     private val controller = SensorRestrictController()
     private var running = false
     private var lastDesired: DesiredState? = null
@@ -54,7 +55,7 @@ class SensorMonitorService : Service() {
         override fun run() {
             if (!running) return
             val a11y = WindowChangeAccessibilityService.isEnabled(this@SensorMonitorService)
-            executor.execute { refreshForegroundFallbacks(a11y) }
+            pollExecutor.execute { refreshForegroundFallbacks(a11y) }
             val delay = if (a11y) POLL_WITH_ACCESSIBILITY_MS else POLL_WITHOUT_ACCESSIBILITY_MS
             handler.postDelayed(this, delay)
         }
@@ -101,9 +102,10 @@ class SensorMonitorService : Service() {
         ForegroundTracker.removeListener(foregroundListener)
         ShizukuClient.removeListener(shizukuListener)
         restoreSensorsAndUnbind()
-        executor.shutdown()
+        pollExecutor.shutdownNow()
+        applyExecutor.shutdown()
         try {
-            executor.awaitTermination(1, TimeUnit.SECONDS)
+            applyExecutor.awaitTermination(1, TimeUnit.SECONDS)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
         }
@@ -118,8 +120,14 @@ class SensorMonitorService : Service() {
      * a task and immediately shut the executor down.
      */
     private fun restoreSensorsAndUnbind() {
+        // Drop any in-flight dumpsys so restore is not stuck behind a poll.
         try {
-            val future = executor.submit<Boolean> {
+            pollExecutor.shutdownNow()
+        } catch (_: Exception) {
+        }
+        ShizukuClient.cancel()
+        try {
+            val future = applyExecutor.submit<Boolean> {
                 var ok = false
                 if (!ShizukuClient.isReady()) {
                     ShizukuClient.bindIfPossible(force = true)
@@ -180,12 +188,14 @@ class SensorMonitorService : Service() {
                 }
             }
         }
-        applyPolicy("poll", force = force)
-        publishState()
+        applyExecutor.execute {
+            applyPolicy("poll", force = force)
+            publishState()
+        }
     }
 
     private fun scheduleApply(reason: String) {
-        executor.execute { applyPolicy(reason) }
+        applyExecutor.execute { applyPolicy(reason) }
     }
 
     private fun applyPolicy(reason: String, force: Boolean = false) {

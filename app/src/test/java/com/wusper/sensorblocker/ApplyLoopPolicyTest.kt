@@ -40,4 +40,12 @@ class ApplyLoopPolicyTest {
             ApplyLoopPolicy.shouldSkipReapply(restrict, restrict, lastApplyOk = true, fallbackAttemptedForLast = true, force = true)
         )
     }
+
+    @Test
+    fun confirmsModeOnlyWhenNeeded() {
+        assertTrue(ApplyLoopPolicy.shouldConfirmMode(force = true, firstApplyForDesired = false, commandFailed = false))
+        assertTrue(ApplyLoopPolicy.shouldConfirmMode(force = false, firstApplyForDesired = true, commandFailed = false))
+        assertTrue(ApplyLoopPolicy.shouldConfirmMode(force = false, firstApplyForDesired = false, commandFailed = true))
+        assertFalse(ApplyLoopPolicy.shouldConfirmMode(force = false, firstApplyForDesired = false, commandFailed = false))
+    }
 }

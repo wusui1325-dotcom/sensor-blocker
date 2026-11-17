@@ -153,6 +153,13 @@ object ShizukuClient {
             .tag("sensorblocker")
     }
 
+    fun cancel() {
+        try {
+            shell?.cancel()
+        } catch (_: Exception) {
+        }
+    }
+
     fun exec(command: String): ShellResult {
         val service = shell ?: return ShellResult(-1, "user service not bound")
         return try {

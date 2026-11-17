@@ -21,10 +21,12 @@ android {
         applicationId "com.wusper.sensorblocker"
         minSdk 26
         targetSdk 35
-        versionCode 101
-        versionName "1.0.1"
+        versionCode 102
+        versionName "1.0.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        resourceConfigurations += ["en", "zh", "zh-rCN", "zh-rTW"]
     }
+
 
     signingConfigs {
         if (releaseSigningReady) {
@@ -39,7 +41,8 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (releaseSigningReady) {
                 signingConfig signingConfigs.release
@@ -55,9 +58,23 @@ android {
         jvmTarget = '17'
     }
     buildFeatures {
-        viewBinding true
+        viewBinding false
         buildConfig true
         aidl true
+    }
+
+    packaging {
+        resources {
+            excludes += [
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE.txt",
+                "META-INF/LICENSE",
+                "META-INF/NOTICE",
+                "META-INF/androidx/**",
+                "META-INF/*.version",
+                "okhttp3/internal/publicsuffix/*"
+            ]
+        }
     }
 }
 
@@ -65,11 +82,7 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.15.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
-    implementation 'androidx.preference:preference-ktx:1.2.1'
-    implementation 'androidx.activity:activity-ktx:1.9.3'
-    implementation 'androidx.coordinatorlayout:coordinatorlayout:1.2.0'
 
     implementation 'dev.rikka.shizuku:api:13.1.5'
     implementation 'dev.rikka.shizuku:provider:13.1.5'

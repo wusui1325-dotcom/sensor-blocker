@@ -23,6 +23,18 @@ object ApplyLoopPolicy {
      * succeeded, or already tried the last-resort fallback for this state.
      * A complete failure can be retried on a slow heartbeat via [force].
      */
+    /**
+     * Re-query SensorService mode after a command only when needed:
+     * first apply of this desired state, a failed command, or a forced checksum.
+     */
+    fun shouldConfirmMode(
+        force: Boolean,
+        firstApplyForDesired: Boolean,
+        commandFailed: Boolean
+    ): Boolean {
+        return force || firstApplyForDesired || commandFailed
+    }
+
     fun shouldSkipReapply(
         desired: DesiredState,
         lastDesired: DesiredState?,

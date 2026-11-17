@@ -37,6 +37,23 @@ class SensorCommandsTest {
     }
 
     @Test
+    fun restrictAndEnableBatchAModeQueryInOneShell() {
+        assertEquals(
+            "dumpsys sensorservice restrict com.wusper.sensorblocker; dumpsys sensorservice 2>/dev/null | grep -E 'Mode :'",
+            SensorCommands.restrictAndQueryMode("com.wusper.sensorblocker")
+        )
+        assertEquals(
+            "dumpsys sensorservice enable; dumpsys sensorservice 2>/dev/null | grep -E 'Mode :'",
+            SensorCommands.enableAndQueryMode()
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun restrictAndQueryModeRejectsInjection() {
+        SensorCommands.restrictAndQueryMode("com.foo; rm -rf /")
+    }
+
+    @Test
     fun fallbackCodesAreVersionAware() {
         assertEquals(
             listOf("service call sensor_privacy 4 i32 1"),

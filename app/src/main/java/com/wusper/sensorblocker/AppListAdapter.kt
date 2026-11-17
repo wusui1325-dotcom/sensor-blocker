@@ -64,17 +64,17 @@ class AppListAdapter(
 
     private fun applyFilter() {
         val q = query.trim()
-        visible.clear()
-        if (q.isEmpty()) {
-            visible.addAll(all)
+        val next = if (q.isEmpty()) {
+            all.toList()
         } else {
-            visible.addAll(
-                all.filter {
-                    it.label.contains(q, ignoreCase = true) ||
-                        it.packageName.contains(q, ignoreCase = true)
-                }
-            )
+            all.filter {
+                it.label.contains(q, ignoreCase = true) ||
+                    it.packageName.contains(q, ignoreCase = true)
+            }
         }
+        if (next == visible) return
+        visible.clear()
+        visible.addAll(next)
         notifyDataSetChanged()
     }
 

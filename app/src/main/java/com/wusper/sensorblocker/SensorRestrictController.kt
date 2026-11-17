@@ -44,7 +44,8 @@ class SensorRestrictController {
             lastError = "shizuku-not-ready"
             return false
         }
-        if (desired != lastDesired) {
+        val firstForDesired = desired != lastDesired
+        if (firstForDesired) {
             fallbackAttemptedForDesired = false
             lastDesired = desired
         }
@@ -53,18 +54,47 @@ class SensorRestrictController {
             revertPrivacyFallback()
         }
 
+        val wantConfirm = ApplyLoopPolicy.shouldConfirmMode(
+            force = force,
+            firstApplyForDesired = firstForDesired,
+            commandFailed = false
+        )
         val command = when (desired) {
-            is DesiredState.Normal -> SensorCommands.enable()
+            is DesiredState.Normal ->
+                if (wantConfirm) SensorCommands.enableAndQueryMode() else SensorCommands.enable()
             is DesiredState.RestrictTo -> {
                 if (!SensorCommands.isSafePackageName(desired.packageName)) {
                     lastError = "unsafe-package"
                     return false
                 }
-                SensorCommands.restrict(desired.packageName)
+                if (wantConfirm) {
+                    SensorCommands.restrictAndQueryMode(desired.packageName)
+                } else {
+                    SensorCommands.restrict(desired.packageName)
+                }
             }
         }
         val result = ShizukuClient.exec(command)
-        val mode = queryMode()
+        val confirm = ApplyLoopPolicy.shouldConfirmMode(
+            force = force,
+            firstApplyForDesired = firstForDesired,
+            commandFailed = !result.isSuccess
+        )
+        var mode: SensorServiceMode = SensorServiceModeParser.parse(result.output)
+        if (confirm) {
+            if (mode is SensorServiceMode.Unknown) {
+                mode = queryMode()
+            } else {
+                lastMode = mode
+            }
+        } else if (result.isSuccess && lastMode !is SensorServiceMode.Unknown) {
+            mode = when (desired) {
+                is DesiredState.Normal -> SensorServiceMode.Normal
+                is DesiredState.RestrictTo -> SensorServiceMode.Restricted(desired.packageName)
+            }
+            lastMode = mode
+        }
+
         val ok = matches(desired, mode)
         if (ok) {
             if (desired is DesiredState.Normal) {

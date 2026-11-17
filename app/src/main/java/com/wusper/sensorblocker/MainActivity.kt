@@ -27,6 +27,8 @@ import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textfield.TextInputEditText
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : AppCompatActivity() {
     private lateinit var adapter: AppListAdapter
@@ -45,6 +47,9 @@ class MainActivity : AppCompatActivity() {
     private var apps: List<AppInfo> = emptyList()
     private var updatingSwitch = false
     private var updatingMode = false
+    private val bgExecutor = Executors.newSingleThreadExecutor()
+    private val loadGeneration = AtomicInteger(0)
+    private var firstResume = true
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -129,10 +134,7 @@ class MainActivity : AppCompatActivity() {
         }
         notificationChip.setOnClickListener { requestNotificationPermission() }
 
-        apps = loadApps()
         bindMode(AppPreferences.blockMode(this))
-        reloadList()
-        maybeShowFirstLaunch()
 
         ShizukuClient.addListener(shizukuListener)
         MonitorStateHub.addListener(stateListener)
@@ -142,17 +144,32 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         ShizukuClient.removeListener(shizukuListener)
         MonitorStateHub.removeListener(stateListener)
+        bgExecutor.shutdown()
         super.onDestroy()
     }
 
     override fun onResume() {
         super.onResume()
-        ForegroundCatalog.refresh(this)
-        apps = loadApps()
-        reloadList()
         ShizukuClient.bindIfPossible()
         maybeResumeMonitoring()
         refreshStatus()
+        val first = firstResume
+        firstResume = false
+        reloadAppsAsync(thenFirstRun = first)
+    }
+
+    private fun reloadAppsAsync(thenFirstRun: Boolean) {
+        val gen = loadGeneration.incrementAndGet()
+        bgExecutor.execute {
+            ForegroundCatalog.refresh(this)
+            val loaded = loadApps()
+            runOnUiThread {
+                if (isFinishing || isDestroyed || gen != loadGeneration.get()) return@runOnUiThread
+                apps = loaded
+                reloadList()
+                if (thenFirstRun) maybeShowFirstLaunch()
+            }
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
