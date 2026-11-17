@@ -44,6 +44,7 @@ class SensorCommandsTest {
         )
         assertEquals(
             listOf(
+                "service call sensor_privacy 9 i32 0",
                 "service call sensor_privacy 8 i32 0",
                 "service call sensor_privacy 4 i32 0"
             ),

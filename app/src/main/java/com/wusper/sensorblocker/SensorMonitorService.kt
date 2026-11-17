@@ -14,10 +14,13 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class SensorMonitorService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -26,6 +29,7 @@ class SensorMonitorService : Service() {
     private var running = false
     private var lastDesired: DesiredState? = null
     private var lastApplyOk = false
+    private var lastModeCheckAt = 0L
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == AppPreferences.KEY_BLOCKED ||
@@ -49,12 +53,9 @@ class SensorMonitorService : Service() {
     private val pollRunnable = object : Runnable {
         override fun run() {
             if (!running) return
-            executor.execute { refreshForegroundFallbacks() }
-            val delay = if (WindowChangeAccessibilityService.isEnabled(this@SensorMonitorService)) {
-                POLL_WITH_ACCESSIBILITY_MS
-            } else {
-                POLL_WITHOUT_ACCESSIBILITY_MS
-            }
+            val a11y = WindowChangeAccessibilityService.isEnabled(this@SensorMonitorService)
+            executor.execute { refreshForegroundFallbacks(a11y) }
+            val delay = if (a11y) POLL_WITH_ACCESSIBILITY_MS else POLL_WITHOUT_ACCESSIBILITY_MS
             handler.postDelayed(this, delay)
         }
     }
@@ -62,6 +63,7 @@ class SensorMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        ForegroundCatalog.refresh(this)
         AppPreferences.prefs(this).registerOnSharedPreferenceChangeListener(prefListener)
         ForegroundTracker.addListener(foregroundListener)
         ShizukuClient.addListener(shizukuListener)
@@ -70,6 +72,12 @@ class SensorMonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             AppPreferences.setMonitoringEnabled(this, false)
+            try {
+                startAsForeground()
+            } catch (_: Exception) {
+                // Already in foreground or start not allowed; still stop.
+            }
+            running = false
             stopSelf()
             return START_NOT_STICKY
         }
@@ -92,16 +100,45 @@ class SensorMonitorService : Service() {
         AppPreferences.prefs(this).unregisterOnSharedPreferenceChangeListener(prefListener)
         ForegroundTracker.removeListener(foregroundListener)
         ShizukuClient.removeListener(shizukuListener)
-        executor.execute {
-            if (ShizukuClient.isReady()) {
-                controller.apply(DesiredState.Normal)
-            }
-        }
+        restoreSensorsAndUnbind()
         executor.shutdown()
+        try {
+            executor.awaitTermination(1, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /**
+     * Apply NORMAL (and revert any privacy fallback) on the worker, wait
+     * for it, then unbind the Shizuku UserService. Do not fire-and-forget
+     * a task and immediately shut the executor down.
+     */
+    private fun restoreSensorsAndUnbind() {
+        try {
+            val future = executor.submit<Boolean> {
+                var ok = false
+                if (!ShizukuClient.isReady()) {
+                    ShizukuClient.bindIfPossible(force = true)
+                }
+                if (ShizukuClient.isReady()) {
+                    ok = controller.apply(DesiredState.Normal, force = true)
+                }
+                ShizukuClient.unbind()
+                ok
+            }
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to restore sensors on stop", e)
+            try {
+                ShizukuClient.unbind()
+            } catch (_: Throwable) {
+            }
+        }
+    }
 
     private fun startAsForeground() {
         val notification = buildNotification(getString(R.string.notif_monitoring))
@@ -117,22 +154,33 @@ class SensorMonitorService : Service() {
         }
     }
 
-    private fun refreshForegroundFallbacks() {
-        if (ShizukuClient.isReady()) {
-            controller.getFocusedPackage()?.let { ForegroundTracker.update(it, "shizuku") }
-        }
-        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-        if (usm != null) {
-            UsageForegroundQuery.latestResumedPackage(usm)?.let {
-                // UsageEvents is a supplement; do not overwrite a very recent accessibility event.
-                val recent = System.currentTimeMillis() - ForegroundTracker.updatedAt < 1500 &&
-                    ForegroundTracker.source == "accessibility"
-                if (!recent) {
-                    ForegroundTracker.update(it, "usage")
+    private fun refreshForegroundFallbacks(accessibilityEnabled: Boolean) {
+        if (!accessibilityEnabled) {
+            if (ShizukuClient.isReady()) {
+                controller.getFocusedPackage()?.let {
+                    ForegroundTracker.update(it, ForegroundSourcePriority.SHIZUKU)
+                }
+            }
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            if (usm != null) {
+                UsageForegroundQuery.latestResumedPackage(usm)?.let {
+                    ForegroundTracker.update(it, ForegroundSourcePriority.USAGE)
                 }
             }
         }
-        applyPolicy("poll")
+        val now = SystemClock.elapsedRealtime()
+        var force = false
+        if (ShizukuClient.isReady() && now - lastModeCheckAt >= MODE_RECHECK_MS) {
+            lastModeCheckAt = now
+            if (lastDesired != null && lastApplyOk) {
+                val mode = controller.queryMode()
+                if (!controller.matches(lastDesired!!, mode)) {
+                    lastApplyOk = false
+                    force = true
+                }
+            }
+        }
+        applyPolicy("poll", force = force)
         publishState()
     }
 
@@ -140,7 +188,7 @@ class SensorMonitorService : Service() {
         executor.execute { applyPolicy(reason) }
     }
 
-    private fun applyPolicy(reason: String) {
+    private fun applyPolicy(reason: String, force: Boolean = false) {
         if (!running && reason != "start") return
         if (!ShizukuClient.isReady()) {
             ShizukuClient.bindIfPossible()
@@ -155,13 +203,20 @@ class SensorMonitorService : Service() {
             blocklist = AppPreferences.blockedPackages(this),
             selfPackage = packageName
         )
-        if (desired == lastDesired && lastApplyOk) {
+        if (ApplyLoopPolicy.shouldSkipReapply(
+                desired,
+                lastDesired,
+                lastApplyOk,
+                controller.fallbackAttemptedForDesired && lastDesired == desired,
+                force
+            )
+        ) {
             publishState()
             return
         }
-        val ok = controller.apply(desired)
+        val ok = controller.apply(desired, force = force)
         lastDesired = desired
-        lastApplyOk = ok
+        lastApplyOk = ok || (controller.usedPrivacyFallback && controller.fallbackAttemptedForDesired)
         val text = when (val mode = controller.lastMode) {
             is SensorServiceMode.Restricted -> getString(
                 R.string.notif_restricted,
@@ -177,7 +232,7 @@ class SensorMonitorService : Service() {
     private fun publishState() {
         MonitorStateHub.update(
             MonitorState(
-                monitoring = true,
+                monitoring = running || isRunning,
                 shizukuReady = ShizukuClient.isReady(),
                 shizukuBound = ShizukuClient.isBinderAlive(),
                 shizukuPermission = ShizukuClient.hasPermission(),
@@ -204,11 +259,19 @@ class SensorMonitorService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val stopIntent = Intent(this, SensorMonitorService::class.java).setAction(ACTION_STOP)
+        val stop = PendingIntent.getService(
+            this,
+            1,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_stat_shield)
             .setContentIntent(launch)
+            .addAction(0, getString(R.string.notif_action_stop), stop)
             .setOngoing(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
@@ -224,21 +287,50 @@ class SensorMonitorService : Service() {
         const val ACTION_STOP = "com.wusper.sensorblocker.STOP"
         const val CHANNEL_ID = "sensor_monitor"
         const val NOTIFICATION_ID = 1
-        private const val POLL_WITHOUT_ACCESSIBILITY_MS = 250L
-        private const val POLL_WITH_ACCESSIBILITY_MS = 1000L
+        private const val TAG = "SensorMonitor"
+        private const val POLL_WITHOUT_ACCESSIBILITY_MS = 500L
+        private const val POLL_WITH_ACCESSIBILITY_MS = 2_000L
+        private const val MODE_RECHECK_MS = 10_000L
 
         @Volatile
         var isRunning: Boolean = false
             private set
 
         fun start(context: Context) {
-            val intent = Intent(context, SensorMonitorService::class.java).setAction(ACTION_START)
-            ContextCompat.startForegroundService(context, intent)
+            startSafely(context)
         }
 
+        fun startSafely(context: Context): Boolean {
+            val intent = Intent(context, SensorMonitorService::class.java).setAction(ACTION_START)
+            return try {
+                ContextCompat.startForegroundService(context, intent)
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "startForegroundService failed", e)
+                false
+            }
+        }
+
+        /**
+         * Deliver ACTION_STOP through onStartCommand (stopService() does not).
+         * Restore happens in onDestroy, which waits for the worker.
+         */
         fun stop(context: Context) {
             AppPreferences.setMonitoringEnabled(context, false)
-            context.stopService(Intent(context, SensorMonitorService::class.java).setAction(ACTION_STOP))
+            val intent = Intent(context, SensorMonitorService::class.java).setAction(ACTION_STOP)
+            try {
+                if (isRunning) {
+                    context.startService(intent)
+                } else {
+                    context.stopService(intent)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "stop failed, falling back to stopService", e)
+                try {
+                    context.stopService(Intent(context, SensorMonitorService::class.java))
+                } catch (_: Exception) {
+                }
+            }
         }
     }
 }

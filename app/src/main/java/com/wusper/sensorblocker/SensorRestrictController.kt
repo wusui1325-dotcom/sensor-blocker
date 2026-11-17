@@ -10,6 +10,10 @@ class SensorRestrictController {
         private set
     @Volatile var lastError: String? = null
         private set
+    @Volatile var fallbackAttemptedForDesired: Boolean = false
+        private set
+
+    private var lastDesired: DesiredState? = null
 
     fun queryMode(): SensorServiceMode {
         if (!ShizukuClient.isReady()) {
@@ -34,13 +38,21 @@ class SensorRestrictController {
         return FocusedPackageParser.parse(activity.output)
     }
 
-    fun apply(desired: DesiredState): Boolean {
-        usedPrivacyFallback = false
+    fun apply(desired: DesiredState, force: Boolean = false): Boolean {
         lastError = null
         if (!ShizukuClient.isReady()) {
             lastError = "shizuku-not-ready"
             return false
         }
+        if (desired != lastDesired) {
+            fallbackAttemptedForDesired = false
+            lastDesired = desired
+        }
+
+        if (ApplyLoopPolicy.shouldRevertPrivacyFallback(desired, usedPrivacyFallback)) {
+            revertPrivacyFallback()
+        }
+
         val command = when (desired) {
             is DesiredState.Normal -> SensorCommands.enable()
             is DesiredState.RestrictTo -> {
@@ -54,14 +66,22 @@ class SensorRestrictController {
         val result = ShizukuClient.exec(command)
         val mode = queryMode()
         val ok = matches(desired, mode)
-        if (ok) return true
+        if (ok) {
+            if (desired is DesiredState.Normal) {
+                usedPrivacyFallback = false
+            }
+            return true
+        }
 
         lastError = "restrict-unconfirmed exit=${result.exitCode}"
         Log.w(TAG, "SensorService command did not reach the expected mode: $lastError mode=$mode")
 
-        if (desired is DesiredState.RestrictTo) {
-            // Last-resort global privacy toggle. Do not treat this as success
-            // for motion sensors; it is mainly camera/mic on AOSP.
+        if (ApplyLoopPolicy.shouldAttemptPrivacyFallback(
+                desired,
+                alreadyEngaged = usedPrivacyFallback,
+                alreadyAttemptedForDesired = fallbackAttemptedForDesired && !force
+            )
+        ) {
             val fallbacks = SensorCommands.fallbackPrivacyCommands(true, Build.VERSION.SDK_INT)
             for (cmd in fallbacks) {
                 val r = ShizukuClient.exec(cmd)
@@ -71,11 +91,25 @@ class SensorRestrictController {
                     break
                 }
             }
+            fallbackAttemptedForDesired = true
         }
         return false
     }
 
-    private fun matches(desired: DesiredState, mode: SensorServiceMode): Boolean {
+    private fun revertPrivacyFallback() {
+        val fallbacks = SensorCommands.fallbackPrivacyCommands(false, Build.VERSION.SDK_INT)
+        for (cmd in fallbacks) {
+            try {
+                ShizukuClient.exec(cmd)
+            } catch (_: Exception) {
+                // Best effort: still clear the flag after attempting all codes.
+            }
+        }
+        usedPrivacyFallback = false
+        lastError = null
+    }
+
+    fun matches(desired: DesiredState, mode: SensorServiceMode): Boolean {
         return when (desired) {
             is DesiredState.Normal -> mode is SensorServiceMode.Normal
             is DesiredState.RestrictTo ->

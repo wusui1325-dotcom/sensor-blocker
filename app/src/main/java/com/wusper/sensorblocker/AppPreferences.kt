@@ -10,6 +10,7 @@ object AppPreferences {
     const val KEY_ALLOWED = "allowed_packages"
     const val KEY_MONITORING = "monitoring_enabled"
     const val KEY_RECOMMENDATION_SHOWN = "recommendation_shown"
+    const val KEY_BATTERY_HINT_SHOWN = "battery_hint_shown"
 
     fun prefs(context: Context): SharedPreferences {
         return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -53,5 +54,13 @@ object AppPreferences {
 
     fun setRecommendationShown(context: Context, shown: Boolean) {
         prefs(context).edit().putBoolean(KEY_RECOMMENDATION_SHOWN, shown).apply()
+    }
+
+    fun batteryHintShown(context: Context): Boolean {
+        return prefs(context).getBoolean(KEY_BATTERY_HINT_SHOWN, false)
+    }
+
+    fun setBatteryHintShown(context: Context, shown: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BATTERY_HINT_SHOWN, shown).apply()
     }
 }

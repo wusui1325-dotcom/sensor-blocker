@@ -42,6 +42,10 @@
     <string name="accessibility_label">Foreground app detection</string>
 
     <string name="first_run_title">Suggested apps to block</string>
+    <string name="first_run_title_global">Suggested allowlist</string>
+    <string name="first_run_message_global">Global block is on, so “shake” ads are already blocked for most apps.\n\nThese maps or motion apps need the compass or gyroscope. Add them to the allowlist (Alipay, WeChat, and QQ are not selected automatically):\n\n%1$s\n\nThese shopping, short-video, and news apps will also be saved to the block list in case you later switch to List block:\n\n%2$s</string>
+    <string name="first_run_message_global_allow_only">Global block is on, so “shake” ads are already blocked for most apps.\n\nThese maps or motion apps need the compass or gyroscope. Add them to the allowlist (Alipay, WeChat, and QQ are not selected automatically):\n\n%1$s</string>
+    <string name="first_run_add_global">Apply suggestions</string>
     <string name="first_run_message">These shopping, short-video, and news apps often use “shake” ads:\n\n%1$s\n\nIn Global block mode they are already covered. If you later switch to List block, you can add them to the block list in one tap.\n\nMaps, Alipay, WeChat, and QQ are not selected automatically — maps need the compass and gyroscope.</string>
     <string name="first_run_add">Add to block list</string>
     <string name="first_run_later">Not now</string>
@@ -62,6 +66,10 @@
     <string name="menu_usage_settings">Usage access settings</string>
     <string name="menu_accessibility_settings">Accessibility settings</string>
 
+    <string name="notif_action_stop">Stop</string>
+    <string name="battery_title">Ignore battery optimization</string>
+    <string name="battery_message">Some phones stop background apps after a reboot or when the screen is off. Allow Sensor Blocker to ignore battery optimization so monitoring can start again after boot. This is shown only once.</string>
+    <string name="battery_open_settings">Open settings</string>
     <string name="notif_channel_name">Sensor monitoring</string>
     <string name="notif_title">Sensor Blocker</string>
     <string name="notif_monitoring">Monitoring…</string>

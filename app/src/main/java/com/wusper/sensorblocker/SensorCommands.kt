@@ -37,8 +37,7 @@ object SensorCommands {
     fun fallbackPrivacyCommands(enabled: Boolean, sdkInt: Int): List<String> {
         val value = if (enabled) "1" else "0"
         val codes = when {
-            sdkInt >= 34 -> listOf(9, 8, 4)
-            sdkInt >= 33 -> listOf(8, 4)
+            sdkInt >= 33 -> listOf(9, 8, 4)
             else -> listOf(4)
         }
         return codes.map { "service call sensor_privacy $it i32 $value" }

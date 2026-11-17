@@ -1,5 +1,6 @@
 package com.wusper.sensorblocker
 
+import android.graphics.drawable.Drawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -16,6 +17,7 @@ class AppListAdapter(
     private val all = mutableListOf<AppInfo>()
     private val visible = mutableListOf<AppInfo>()
     private val checked = mutableSetOf<String>()
+    private val icons = HashMap<String, Drawable>()
     private var query: String = ""
     private var allowMode: Boolean = true
 
@@ -29,23 +31,35 @@ class AppListAdapter(
     }
 
     fun submit(apps: List<AppInfo>, selected: Set<String>, allowMode: Boolean) {
-        all.clear()
-        all.addAll(apps)
+        this.allowMode = allowMode
         checked.clear()
         checked.addAll(selected)
-        this.allowMode = allowMode
+        all.clear()
+        all.addAll(apps.sortedWith(appComparator()))
+        val keep = all.map { it.packageName }.toSet()
+        icons.keys.retainAll(keep)
         applyFilter()
     }
 
     fun setSelected(selected: Set<String>) {
         checked.clear()
         checked.addAll(selected)
-        notifyDataSetChanged()
+        all.sortWith(appComparator())
+        applyFilter()
     }
 
     fun filter(text: String) {
         query = text
         applyFilter()
+    }
+
+    private fun appComparator(): Comparator<AppInfo> {
+        return compareByDescending<AppInfo> { it.packageName in checked }
+            .thenByDescending {
+                if (allowMode) it.isRecommendedAllow else it.isRecommendedBlock
+            }
+            .thenBy { it.isSystem }
+            .thenBy { it.label.lowercase() }
     }
 
     private fun applyFilter() {
@@ -75,11 +89,21 @@ class AppListAdapter(
         holder.label.text = app.label
         holder.packageName.text = app.packageName
         holder.check.setOnCheckedChangeListener(null)
+        holder.check.setOnClickListener(null)
         holder.check.isChecked = app.packageName in checked
-        try {
-            holder.icon.setImageDrawable(context.packageManager.getApplicationIcon(app.packageName))
-        } catch (_: Exception) {
-            holder.icon.setImageResource(R.mipmap.ic_launcher)
+        holder.check.isClickable = false
+        holder.check.isFocusable = false
+        val cached = icons[app.packageName]
+        if (cached != null) {
+            holder.icon.setImageDrawable(cached)
+        } else {
+            try {
+                val icon = context.packageManager.getApplicationIcon(app.packageName)
+                icons[app.packageName] = icon
+                holder.icon.setImageDrawable(icon)
+            } catch (_: Exception) {
+                holder.icon.setImageResource(R.mipmap.ic_launcher)
+            }
         }
         val showBadge = when {
             allowMode && app.isRecommendedAllow -> true
@@ -92,14 +116,12 @@ class AppListAdapter(
                 if (allowMode) R.string.badge_recommended_allow else R.string.badge_recommended_block
             )
         }
-        val listener = View.OnClickListener {
+        holder.root.setOnClickListener {
             val nowChecked = app.packageName !in checked
             if (nowChecked) checked.add(app.packageName) else checked.remove(app.packageName)
             holder.check.isChecked = nowChecked
             onToggle(app, nowChecked)
         }
-        holder.root.setOnClickListener(listener)
-        holder.check.setOnClickListener(listener)
     }
 
     override fun getItemCount(): Int = visible.size

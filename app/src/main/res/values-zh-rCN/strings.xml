@@ -42,6 +42,10 @@
     <string name="accessibility_label">前台应用检测</string>
 
     <string name="first_run_title">建议加入封锁名单的应用</string>
+    <string name="first_run_title_global">建议加入允许名单</string>
+    <string name="first_run_message_global">当前是「全局屏蔽」，多数「摇一摇」广告已被拦截。\n\n这些地图或体感应用需要指南针或陀螺仪，建议加入允许名单（支付宝、微信、QQ 不会被自动勾选）：\n\n%1$s\n\n同时把这些购物、短视频和新闻应用记入封锁名单，方便以后改用「列表屏蔽」：\n\n%2$s</string>
+    <string name="first_run_message_global_allow_only">当前是「全局屏蔽」，多数「摇一摇」广告已被拦截。\n\n这些地图或体感应用需要指南针或陀螺仪，建议加入允许名单（支付宝、微信、QQ 不会被自动勾选）：\n\n%1$s</string>
+    <string name="first_run_add_global">应用建议</string>
     <string name="first_run_message">检测到这些经常出现「摇一摇」广告的购物、短视频和新闻应用：\n\n%1$s\n\n当前默认的「全局屏蔽」已经会拦住它们。若你之后改用「列表屏蔽」，可以一键把它们加入封锁名单。\n\n地图、支付宝、微信和 QQ 不会被自动勾选——地图需要指南针和陀螺仪。</string>
     <string name="first_run_add">加入封锁名单</string>
     <string name="first_run_later">稍后再说</string>
@@ -62,6 +66,10 @@
     <string name="menu_usage_settings">打开使用情况访问设置</string>
     <string name="menu_accessibility_settings">打开无障碍设置</string>
 
+    <string name="notif_action_stop">停止监控</string>
+    <string name="battery_title">忽略电池优化</string>
+    <string name="battery_message">部分手机会在重启或熄屏后结束后台应用。建议允许「传感屏蔽」忽略电池优化，以便开机后重新启动监控。此提示只会出现一次。</string>
+    <string name="battery_open_settings">打开设置</string>
     <string name="notif_channel_name">传感器监控</string>
     <string name="notif_title">传感屏蔽</string>
     <string name="notif_monitoring">监控中…</string>

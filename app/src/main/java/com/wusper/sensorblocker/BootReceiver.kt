@@ -3,7 +3,7 @@ package com.wusper.sensorblocker
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import androidx.core.content.ContextCompat
+import android.util.Log
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -14,8 +14,13 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
         if (!AppPreferences.isMonitoringEnabled(context)) return
-        val start = Intent(context, SensorMonitorService::class.java)
-            .setAction(SensorMonitorService.ACTION_START)
-        ContextCompat.startForegroundService(context, start)
+        ForegroundCatalog.refresh(context)
+        if (!SensorMonitorService.startSafely(context)) {
+            Log.w(TAG, "Unable to start monitor after $action")
+        }
+    }
+
+    companion object {
+        private const val TAG = "SensorBlockerBoot"
     }
 }

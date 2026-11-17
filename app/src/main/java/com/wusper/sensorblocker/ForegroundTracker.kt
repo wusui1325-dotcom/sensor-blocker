@@ -3,21 +3,20 @@ package com.wusper.sensorblocker
 import java.util.concurrent.CopyOnWriteArrayList
 
 object ForegroundTracker {
-    private val ignored = setOf(
-        "android",
-        "com.android.systemui",
-        "com.android.intentresolver",
-        "com.android.permissioncontroller"
-    )
-
-    @Volatile var current: String? = null
-        private set
-    @Volatile var source: String = "none"
-        private set
-    @Volatile var updatedAt: Long = 0L
-        private set
-
+    private val memory = ForegroundMemory()
     private val listeners = CopyOnWriteArrayList<(String?) -> Unit>()
+
+    val current: String? get() = memory.current
+    val source: String get() = memory.source
+    val updatedAt: Long get() = memory.updatedAt
+
+    fun configure(selfPackage: String, launchers: Set<String>, imes: Set<String>) {
+        synchronized(memory) {
+            memory.selfPackage = selfPackage
+            memory.launchers = launchers
+            memory.imes = imes
+        }
+    }
 
     fun addListener(listener: (String?) -> Unit) {
         listeners.add(listener)
@@ -27,21 +26,12 @@ object ForegroundTracker {
         listeners.remove(listener)
     }
 
-    fun shouldIgnore(packageName: String?): Boolean {
-        if (packageName.isNullOrBlank()) return true
-        return packageName in ignored
-    }
-
-    fun update(packageName: String?, source: String) {
-        if (shouldIgnore(packageName)) return
-        if (packageName == current) {
-            this.source = source
-            updatedAt = System.currentTimeMillis()
-            return
+    fun update(packageName: String?, source: String): Boolean {
+        val changed = synchronized(memory) { memory.update(packageName, source) }
+        if (changed) {
+            val value = memory.current
+            listeners.forEach { it(value) }
         }
-        current = packageName
-        this.source = source
-        updatedAt = System.currentTimeMillis()
-        listeners.forEach { it(packageName) }
+        return changed
     }
 }

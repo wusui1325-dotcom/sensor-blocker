@@ -42,6 +42,10 @@
     <string name="accessibility_label">前景應用偵測</string>
 
     <string name="first_run_title">建議加入封鎖名單的應用</string>
+    <string name="first_run_title_global">建議加入允許清單</string>
+    <string name="first_run_message_global">目前是「全域屏蔽」，多數「搖一搖」廣告已被攔截。\n\n這些地圖或體感應用需要指南針或陀螺儀，建議加入允許清單（支付寶、微信、QQ 不會被自動勾選）：\n\n%1$s\n\n同時把這些購物、短影片和新聞應用記入封鎖名單，方便以後改用「清單屏蔽」：\n\n%2$s</string>
+    <string name="first_run_message_global_allow_only">目前是「全域屏蔽」，多數「搖一搖」廣告已被攔截。\n\n這些地圖或體感應用需要指南針或陀螺儀，建議加入允許清單（支付寶、微信、QQ 不會被自動勾選）：\n\n%1$s</string>
+    <string name="first_run_add_global">套用建議</string>
     <string name="first_run_message">偵測到這些經常出現「搖一搖」廣告的購物、短影片和新聞應用：\n\n%1$s\n\n目前預設的「全域屏蔽」已經會攔截它們。若你之後改用「清單屏蔽」，可以一鍵把它們加入封鎖名單。\n\n地圖、支付寶、微信和 QQ 不會被自動勾選——地圖需要指南針和陀螺儀。</string>
     <string name="first_run_add">加入封鎖名單</string>
     <string name="first_run_later">稍後再說</string>
@@ -62,6 +66,10 @@
     <string name="menu_usage_settings">開啟使用情況存取設定</string>
     <string name="menu_accessibility_settings">開啟無障礙設定</string>
 
+    <string name="notif_action_stop">停止監控</string>
+    <string name="battery_title">忽略電池最佳化</string>
+    <string name="battery_message">部分手機在重開機或螢幕關閉後會結束背景應用。建議允許「感測屏蔽」忽略電池最佳化，以便開機後重新啟動監控。此提示只會出現一次。</string>
+    <string name="battery_open_settings">打開設定</string>
     <string name="notif_channel_name">感測器監控</string>
     <string name="notif_title">感測屏蔽</string>
     <string name="notif_monitoring">監控中…</string>

@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.os.Process
 import android.provider.Settings
 import android.view.Menu
@@ -56,7 +57,12 @@ class MainActivity : AppCompatActivity() {
 
     private var pendingStart = false
 
-    private val shizukuListener: () -> Unit = { runOnUiThread { refreshStatus() } }
+    private val shizukuListener: () -> Unit = {
+        runOnUiThread {
+            maybeResumeMonitoring()
+            refreshStatus()
+        }
+    }
     private val stateListener: (MonitorState) -> Unit = { runOnUiThread { bindMonitorState(it) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,11 +136,7 @@ class MainActivity : AppCompatActivity() {
 
         ShizukuClient.addListener(shizukuListener)
         MonitorStateHub.addListener(stateListener)
-        if (AppPreferences.isMonitoringEnabled(this) && !SensorMonitorService.isRunning) {
-            if (ShizukuClient.isReady()) {
-                SensorMonitorService.start(this)
-            }
-        }
+        maybeResumeMonitoring()
     }
 
     override fun onDestroy() {
@@ -145,8 +147,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshStatus()
+        ForegroundCatalog.refresh(this)
+        apps = loadApps()
+        reloadList()
         ShizukuClient.bindIfPossible()
+        maybeResumeMonitoring()
+        refreshStatus()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -211,8 +217,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun reallyStartMonitoring() {
         ShizukuClient.bindIfPossible()
-        SensorMonitorService.start(this)
+        SensorMonitorService.startSafely(this)
         refreshStatus()
+        maybeOfferBatteryOptimization()
+    }
+
+    private fun maybeResumeMonitoring() {
+        if (!AppPreferences.isMonitoringEnabled(this) || SensorMonitorService.isRunning) return
+        if (!ShizukuClient.isReady()) {
+            ShizukuClient.bindIfPossible()
+            return
+        }
+        SensorMonitorService.startSafely(this)
     }
 
     private fun resetSwitch(checked: Boolean) {
@@ -263,7 +279,7 @@ class MainActivity : AppCompatActivity() {
         bindSensorMode(mode)
         val monitoring = SensorMonitorService.isRunning || AppPreferences.isMonitoringEnabled(this)
         statusMonitor.setText(if (SensorMonitorService.isRunning) R.string.status_monitoring_on else R.string.status_monitoring_off)
-        resetSwitch(SensorMonitorService.isRunning)
+        resetSwitch(SensorMonitorService.isRunning || AppPreferences.isMonitoringEnabled(this))
         val fg = ForegroundTracker.current
         if (fg.isNullOrBlank()) {
             statusForeground.visibility = View.GONE
@@ -311,33 +327,90 @@ class MainActivity : AppCompatActivity() {
 
     private fun maybeShowFirstLaunch() {
         if (AppPreferences.recommendationShown(this)) return
-        val targets = apps.filter { RecommendedApps.isBlockCandidate(it.packageName) }
-        if (targets.isEmpty()) {
+        val mode = AppPreferences.blockMode(this)
+        val offer = FirstRunSeeds.forMode(mode, apps.map { it.packageName }.toSet())
+        if (offer.isEmpty) {
             AppPreferences.setRecommendationShown(this, true)
             return
         }
-        val names = targets.joinToString("\n") { "• ${it.label}" }
+        val labels = apps.associate { it.packageName to it.label }
+        fun bullets(packages: Set<String>): String {
+            return packages
+                .map { "• ${labels[it] ?: it}" }
+                .sorted()
+                .joinToString("\n")
+        }
+        val allowNames = bullets(offer.allowPackages)
+        val blockNames = bullets(offer.blockPackages)
+        val title = if (mode == BlockMode.GLOBAL && offer.allowPackages.isNotEmpty()) {
+            R.string.first_run_title_global
+        } else {
+            R.string.first_run_title
+        }
+        val message = when {
+            offer.allowPackages.isNotEmpty() && offer.blockPackages.isNotEmpty() ->
+                getString(R.string.first_run_message_global, allowNames, blockNames)
+            offer.allowPackages.isNotEmpty() ->
+                getString(R.string.first_run_message_global_allow_only, allowNames)
+            else -> getString(R.string.first_run_message, blockNames)
+        }
+        val positive = if (offer.allowPackages.isNotEmpty()) {
+            R.string.first_run_add_global
+        } else {
+            R.string.first_run_add
+        }
         MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.first_run_title)
-            .setMessage(getString(R.string.first_run_message, names))
-            .setPositiveButton(R.string.first_run_add) { _, _ ->
-                val set = AppPreferences.blockedPackages(this).toMutableSet()
-                targets.forEach { set.add(it.packageName) }
-                AppPreferences.setBlockedPackages(this, set)
-                AppPreferences.setRecommendationShown(this, true)
-                if (AppPreferences.blockMode(this) == BlockMode.LIST) {
-                    reloadList()
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(positive) { _, _ ->
+                if (offer.allowPackages.isNotEmpty()) {
+                    val set = AppPreferences.allowedPackages(this).toMutableSet()
+                    set.addAll(offer.allowPackages)
+                    AppPreferences.setAllowedPackages(this, set)
                 }
-                Toast.makeText(
-                    this,
-                    getString(R.string.first_run_added, targets.size),
-                    Toast.LENGTH_SHORT
-                ).show()
+                if (offer.blockPackages.isNotEmpty()) {
+                    val set = AppPreferences.blockedPackages(this).toMutableSet()
+                    set.addAll(offer.blockPackages)
+                    AppPreferences.setBlockedPackages(this, set)
+                }
+                AppPreferences.setRecommendationShown(this, true)
+                reloadList()
+                val added = offer.allowPackages.size + offer.blockPackages.size
+                Toast.makeText(this, getString(R.string.first_run_added, added), Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(R.string.first_run_later) { _, _ ->
                 AppPreferences.setRecommendationShown(this, true)
             }
             .setCancelable(false)
+            .show()
+    }
+
+    private fun maybeOfferBatteryOptimization() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        if (AppPreferences.batteryHintShown(this)) return
+        val pm = getSystemService(PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) {
+            AppPreferences.setBatteryHintShown(this, true)
+            return
+        }
+        AppPreferences.setBatteryHintShown(this, true)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.battery_title)
+            .setMessage(R.string.battery_message)
+            .setPositiveButton(R.string.battery_open_settings) { _, _ ->
+                try {
+                    startActivity(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                            .setData(Uri.parse("package:$packageName"))
+                    )
+                } catch (_: Exception) {
+                    try {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+            .setNegativeButton(R.string.first_run_later, null)
             .show()
     }
 
