@@ -19,7 +19,6 @@ import java.util.concurrent.atomic.AtomicReference
 object ShizukuClient {
     const val REQUEST_CODE_PERMISSION = 1001
     const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
-    private const val BIND_TIMEOUT_MS = 4_000L
     private const val MAIN_DISPATCH_TIMEOUT_MS = 2_000L
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -30,11 +29,16 @@ object ShizukuClient {
         private set
     @Volatile private var bound = false
     @Volatile private var bindStartedAt = 0L
+    @Volatile private var nextRetryAt = 0L
+    @Volatile private var failedAttempts = 0
     @Volatile var lastBindError: String? = null
         private set
     @Volatile var lastPermissionError: String? = null
         private set
     private var appContext: Context? = null
+
+    private val bindTimeoutRunnable = Runnable { onBindTimeout() }
+    private val bindRetryRunnable = Runnable { bindOnMain(force = false) }
 
     private val binderReceived = Shizuku.OnBinderReceivedListener {
         lastPermissionError = null
@@ -47,6 +51,7 @@ object ShizukuClient {
         shell = null
         bound = false
         bindStartedAt = 0L
+        cancelBindTimers()
         lastBindError = "Shizuku binder died"
         releaseWaiters()
         notifyChanged()
@@ -62,6 +67,9 @@ object ShizukuClient {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
             shell = IShellService.Stub.asInterface(service)
             lastBindError = null
+            failedAttempts = 0
+            nextRetryAt = 0L
+            cancelBindTimers()
             releaseWaiters()
             notifyChanged()
         }
@@ -70,6 +78,7 @@ object ShizukuClient {
             shell = null
             bound = false
             bindStartedAt = 0L
+            cancelBindTimers()
             lastBindError = "UserService disconnected"
             releaseWaiters()
             notifyChanged()
@@ -77,7 +86,11 @@ object ShizukuClient {
     }
 
     fun init(context: Context) {
-        appContext = context.applicationContext
+        val app = context.applicationContext
+        if (!ProcessIdentity.isDefaultAppProcess(ProcessIdentity.currentProcessName(), app.packageName)) {
+            return
+        }
+        appContext = app
         Shizuku.addBinderReceivedListenerSticky(binderReceived)
         Shizuku.addBinderDeadListener(binderDead)
         Shizuku.addRequestPermissionResultListener(permissionListener)
@@ -98,6 +111,11 @@ object ShizukuClient {
 
     private fun releaseWaiters() {
         readyWaiters.forEach { it.countDown() }
+    }
+
+    private fun cancelBindTimers() {
+        mainHandler.removeCallbacks(bindTimeoutRunnable)
+        mainHandler.removeCallbacks(bindRetryRunnable)
     }
 
     fun isBinderAlive(): Boolean {
@@ -136,7 +154,9 @@ object ShizukuClient {
 
     fun snapshot(): ShizukuSnapshot {
         val now = SystemClock.elapsedRealtime()
-        val inProgress = bound && shell == null && (now - bindStartedAt) < BIND_TIMEOUT_MS
+        val timeout = BindRetryPolicy.timeoutMs(failedAttempts)
+        val inProgress = bound && shell == null && lastBindError == null &&
+            (now - bindStartedAt) < timeout
         return ShizukuSnapshot(
             binderAlive = isBinderAlive(),
             permission = permissionState(),
@@ -171,7 +191,7 @@ object ShizukuClient {
      * onServiceConnected, a bind failure, or [timeoutMs]. The main thread never
      * blocks waiting for the connection, to avoid ANRs.
      */
-    fun bindAndWait(timeoutMs: Long = BIND_TIMEOUT_MS): Boolean {
+    fun bindAndWait(timeoutMs: Long = BindRetryPolicy.FIRST_TIMEOUT_MS): Boolean {
         if (isReady()) return true
         if (!MainThreadBindPolicy.mayBlockForConnection(isMainThread())) {
             bindOnMain(force = false)
@@ -184,8 +204,8 @@ object ShizukuClient {
             if (isReady()) return true
             latch.await(timeoutMs, TimeUnit.MILLISECONDS)
             if (!isReady() && lastBindError == null) {
-                lastBindError = "UserService did not connect"
-                notifyChanged()
+                // The main-thread watchdog may already have recorded this.
+                runOnMain(wait = false) { onBindTimeout() }
             }
             return isReady()
         } finally {
@@ -246,12 +266,18 @@ object ShizukuClient {
         if (!hasPermission()) return
         if (shell != null && !force) return
         val now = SystemClock.elapsedRealtime()
-        if (bound && !force) {
-            if (now - bindStartedAt < BIND_TIMEOUT_MS) return
-            lastBindError = "UserService did not connect"
-            unbindOnMain()
+        if (bound && shell == null && !force) {
+            val timeout = BindRetryPolicy.timeoutMs(failedAttempts)
+            if (now - bindStartedAt < timeout) return
+            // Still waiting for the timeout watchdog, or already failed and backing off.
+            return
         }
-        if (force && (bound || shell != null)) {
+        if (!BindRetryPolicy.shouldStartBind(now, nextRetryAt, force)) return
+        if (force) {
+            failedAttempts = 0
+            nextRetryAt = 0L
+        }
+        if (bound || shell != null) {
             unbindOnMain()
         }
         lastBindError = null
@@ -259,20 +285,46 @@ object ShizukuClient {
             Shizuku.bindUserService(userServiceArgs(ctx), connection)
             bound = true
             bindStartedAt = SystemClock.elapsedRealtime()
+            cancelBindTimers()
+            mainHandler.postDelayed(bindTimeoutRunnable, BindRetryPolicy.timeoutMs(failedAttempts))
             notifyChanged()
         } catch (t: Throwable) {
             bound = false
             bindStartedAt = 0L
             lastBindError = shortError(t)
+            scheduleBackoffLocked()
             releaseWaiters()
             notifyChanged()
         }
     }
 
+    private fun onBindTimeout() {
+        if (!isMainThread()) {
+            runOnMain(wait = false) { onBindTimeout() }
+            return
+        }
+        if (shell != null) return
+        if (!bound) return
+        lastBindError = "UserService did not connect"
+        unbindOnMain()
+        scheduleBackoffLocked()
+        releaseWaiters()
+        notifyChanged()
+    }
+
+    private fun scheduleBackoffLocked() {
+        failedAttempts += 1
+        val delay = BindRetryPolicy.backoffMs(failedAttempts)
+        nextRetryAt = SystemClock.elapsedRealtime() + delay
+        mainHandler.removeCallbacks(bindRetryRunnable)
+        mainHandler.postDelayed(bindRetryRunnable, delay)
+    }
+
     private fun unbindOnMain() {
         val ctx = appContext ?: return
+        cancelBindTimers()
         try {
-            if (bound) {
+            if (bound || shell != null) {
                 Shizuku.unbindUserService(userServiceArgs(ctx), connection, true)
             }
         } catch (_: Throwable) {
@@ -285,7 +337,9 @@ object ShizukuClient {
 
     private fun userServiceArgs(ctx: Context): Shizuku.UserServiceArgs {
         return Shizuku.UserServiceArgs(ComponentName(ctx, ShellUserService::class.java))
-            .daemon(false)
+            // Keep the privileged process alive independent of Activity
+            // lifetime. Stop still tears it down with unbind(..., remove=true).
+            .daemon(true)
             .processNameSuffix("shell")
             .debuggable(BuildConfig.DEBUG)
             .version(BuildConfig.VERSION_CODE)
