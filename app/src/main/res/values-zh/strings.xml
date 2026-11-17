@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">传感屏蔽</string>
+
+    <string name="status_shizuku_ready">Shizuku：已连接并已授权</string>
+    <string name="status_shizuku_no_permission">Shizuku：已连接，需要授权</string>
+    <string name="status_shizuku_disconnected">Shizuku：未连接</string>
+    <string name="status_mode_normal">SensorService：正常（所有应用可读传感器）</string>
+    <string name="status_mode_restricted">SensorService：已限制（仅 %1$s 可读传感器）</string>
+    <string name="status_mode_unknown">SensorService：未知（需要已运行的 Shizuku）</string>
+    <string name="status_privacy_fallback">已使用摄像头/麦克风隐私开关作为后备，此设备上运动传感器仍可能可读。</string>
+    <string name="status_monitoring_on">监控：开</string>
+    <string name="status_monitoring_off">监控：关</string>
+    <string name="status_monitoring_pending">监控：开（等待 Shizuku）</string>
+    <string name="status_foreground">前台应用：%1$s</string>
+    <string name="monitoring_switch">监控</string>
+    <string name="grant_shizuku">授权 Shizuku</string>
+    <string name="open_shizuku">打开 Shizuku</string>
+    <string name="open_shizuku_github">打开 GitHub 发布页</string>
+    <string name="shizuku_help">设置说明</string>
+
+    <string name="mode_section">工作模式</string>
+    <string name="mode_global">全局屏蔽</string>
+    <string name="mode_list">列表屏蔽</string>
+    <string name="mode_global_explain">推荐用于拦截「摇一摇」广告。默认让运动传感器对所有应用不可用，只有你允许的应用（如地图、体感游戏）在前台时才能读取。离开这些应用后，会自动恢复全局屏蔽。</string>
+    <string name="mode_list_explain">平时保持传感器正常；只有封锁名单中的应用出现在前台时才屏蔽。此模式更依赖快速的前台检测，建议开启无障碍。</string>
+
+    <string name="list_title_allow">允许使用传感器的应用</string>
+    <string name="list_title_block">要屏蔽传感器的应用</string>
+    <string name="search_hint">搜索应用</string>
+    <string name="badge_recommended_block">建议屏蔽</string>
+    <string name="badge_recommended_allow">建议允许</string>
+
+    <string name="permission_usage_on">使用情况访问：已开</string>
+    <string name="permission_usage_off">使用情况访问：未开</string>
+    <string name="permission_accessibility_on">无障碍：已开</string>
+    <string name="permission_accessibility_off">无障碍：未开（可选）</string>
+    <string name="permission_notifications_on">通知：已开</string>
+    <string name="permission_notifications_off">通知：未开</string>
+
+    <string name="accessibility_service_description">「传感屏蔽」仅用无障碍来判断哪个应用进入了前台，以便立刻启用或解除 Android SensorService 的受限模式。这是可选项，但在「列表屏蔽」下，以及从地图或游戏返回后迅速恢复全局屏蔽时更及时。本服务不会读取屏幕文字，也不会代替你点击或手势操作。</string>
+    <string name="accessibility_label">前台应用检测</string>
+
+    <string name="first_run_title">建议加入封锁名单的应用</string>
+    <string name="first_run_message">检测到这些经常出现「摇一摇」广告的购物、短视频和新闻应用：\n\n%1$s\n\n当前默认的「全局屏蔽」已经会拦住它们。若你之后改用「列表屏蔽」，可以一键把它们加入封锁名单。\n\n地图、支付宝、微信和 QQ 不会被自动勾选——地图需要指南针和陀螺仪。</string>
+    <string name="first_run_add">加入封锁名单</string>
+    <string name="first_run_later">稍后再说</string>
+    <string name="first_run_added">已将 %1$d 个应用加入封锁名单</string>
+
+    <string name="shizuku_setup_title">如何启动 Shizuku</string>
+    <string name="shizuku_setup_message">本应用需要 Shizuku（相当于 ADB shell 权限），不需要 root。\n\n1. 请从官方 GitHub 发布页安装 Shizuku：https://github.com/RikkaApps/Shizuku/releases\n   国内使用 Google Play 可能不便，建议直接用 GitHub。\n2. Android 11 及以上：在系统设置中打开「开发者选项」→「无线调试」，再按 Shizuku 应用内说明，用无线调试启动并完成配对。\n3. 回到本应用，点击「授权 Shizuku」并允许。\n4. 重启手机后，无线调试通常会关闭，需要重新启动 Shizuku。\n\n如果 Shizuku 未运行或未授权，本应用无法更改 SensorService 模式。</string>
+
+    <string name="limitations_title">使用限制</string>
+    <string name="limitations_message">• 本应用只控制运动传感器（加速度计、陀螺仪、磁力计）的读取，不是通用广告屏蔽工具。不用这些传感器的广告仍会出现。\n• 主要机制是 Android 公开的 SensorService 受限模式（dumpsys sensorservice restrict）。部分厂商系统可能改动或隐藏该服务，不能保证每台设备都有效。\n• 重启后受限模式通常会被清除。若监控是打开的，待 Shizuku 再次运行后，本应用会尝试重新应用。\n• 在「全局屏蔽」下若未把地图、体感游戏加入允许列表，导航指南针或体感操作会失效。\n• 需要 Shizuku 或无线调试。不需要 root、Xposed，也不需要 VPN 或中间人代理。</string>
+
+    <string name="need_shizuku_to_monitor">请先启动并授权 Shizuku，再打开监控。</string>
+    <string name="need_notifications">后台监控需要通知权限。</string>
+    <string name="toast_shizuku_not_installed">尚未安装 Shizuku，请查看设置说明。</string>
+
+    <string name="menu_setup">Shizuku 设置说明</string>
+    <string name="menu_limitations">使用限制</string>
+    <string name="menu_usage_settings">打开使用情况访问设置</string>
+    <string name="menu_accessibility_settings">打开无障碍设置</string>
+
+    <string name="notif_channel_name">传感器监控</string>
+    <string name="notif_title">传感屏蔽</string>
+    <string name="notif_monitoring">监控中…</string>
+    <string name="notif_waiting_shizuku">正在等待 Shizuku…</string>
+    <string name="notif_restricted">传感器已限制为仅 %1$s 可读取</string>
+    <string name="notif_normal">SensorService 处于正常模式</string>
+</resources>

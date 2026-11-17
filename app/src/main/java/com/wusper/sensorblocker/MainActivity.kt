@@ -1,119 +1,423 @@
 package com.wusper.sensorblocker
 
+import android.Manifest
+import android.app.AppOpsManager
 import android.content.Intent
-import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.provider.Settings
-import android.widget.Button
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.textfield.TextInputEditText
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var statusText: TextView
-    private lateinit var recycler: RecyclerView
     private lateinit var adapter: AppListAdapter
-    private val blocked = mutableSetOf<String>()
-    private lateinit var prefs: SharedPreferences
+    private lateinit var statusShizuku: TextView
+    private lateinit var statusSensor: TextView
+    private lateinit var statusMonitor: TextView
+    private lateinit var statusForeground: TextView
+    private lateinit var modeExplain: TextView
+    private lateinit var listTitle: TextView
+    private lateinit var monitorSwitch: MaterialSwitch
+    private lateinit var modeGroup: MaterialButtonToggleGroup
+    private lateinit var btnGrantShizuku: MaterialButton
+    private lateinit var usageChip: TextView
+    private lateinit var accessibilityChip: TextView
+    private lateinit var notificationChip: TextView
+    private var apps: List<AppInfo> = emptyList()
+    private var updatingSwitch = false
+    private var updatingMode = false
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            refreshStatus()
+            if (granted && pendingStart) {
+                pendingStart = false
+                reallyStartMonitoring()
+            }
+        }
+
+    private var pendingStart = false
+
+    private val shizukuListener: () -> Unit = { runOnUiThread { refreshStatus() } }
+    private val stateListener: (MonitorState) -> Unit = { runOnUiThread { bindMonitorState(it) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        prefs = getSharedPreferences("sensor_blocker", MODE_PRIVATE)
+        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
 
-        statusText = findViewById(R.id.statusText)
-        recycler = findViewById(R.id.appList)
-        recycler.layoutManager = LinearLayoutManager(this)
+        statusShizuku = findViewById(R.id.statusShizuku)
+        statusSensor = findViewById(R.id.statusSensor)
+        statusMonitor = findViewById(R.id.statusMonitor)
+        statusForeground = findViewById(R.id.statusForeground)
+        modeExplain = findViewById(R.id.modeExplain)
+        listTitle = findViewById(R.id.listTitle)
+        monitorSwitch = findViewById(R.id.monitorSwitch)
+        modeGroup = findViewById(R.id.modeGroup)
+        btnGrantShizuku = findViewById(R.id.btnGrantShizuku)
+        usageChip = findViewById(R.id.chipUsage)
+        accessibilityChip = findViewById(R.id.chipAccessibility)
+        notificationChip = findViewById(R.id.chipNotification)
 
-        loadBlocked()
-        val apps = loadApps()
-        adapter = AppListAdapter(apps, blocked) { pkg, isBlocked ->
-            if (isBlocked) blocked.add(pkg) else blocked.remove(pkg)
-            saveBlocked()
-        }
-        recycler.adapter = adapter
-
-        findViewById<Button>(R.id.btnStart).setOnClickListener {
-            if (!ShizukuSensorController.isShizukuAvailable()) {
-                Toast.makeText(this, "請先啟動並授權 Shizuku", Toast.LENGTH_LONG).show()
-                return@setOnClickListener
+        adapter = AppListAdapter { app, checked ->
+            val mode = AppPreferences.blockMode(this)
+            if (mode == BlockMode.GLOBAL) {
+                val set = AppPreferences.allowedPackages(this).toMutableSet()
+                if (checked) set.add(app.packageName) else set.remove(app.packageName)
+                AppPreferences.setAllowedPackages(this, set)
+            } else {
+                val set = AppPreferences.blockedPackages(this).toMutableSet()
+                if (checked) set.add(app.packageName) else set.remove(app.packageName)
+                AppPreferences.setBlockedPackages(this, set)
             }
-            startService(Intent(this, SensorMonitorService::class.java))
-            statusText.text = "監控已啟動（精準模式）"
+        }
+        val recycler = findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.appList)
+        recycler.layoutManager = LinearLayoutManager(this)
+        recycler.adapter = adapter
+        recycler.setHasFixedSize(true)
+
+        findViewById<TextInputEditText>(R.id.searchInput).doAfterTextChanged {
+            adapter.filter(it?.toString().orEmpty())
         }
 
-        findViewById<Button>(R.id.btnStop).setOnClickListener {
-            stopService(Intent(this, SensorMonitorService::class.java))
-            statusText.text = "監控已停止"
+        modeGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked || updatingMode) return@addOnButtonCheckedListener
+            val mode = if (checkedId == R.id.btnModeGlobal) BlockMode.GLOBAL else BlockMode.LIST
+            AppPreferences.setBlockMode(this, mode)
+            bindMode(mode)
+            reloadList()
         }
 
-        findViewById<Button>(R.id.btnUsage).setOnClickListener {
+        monitorSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (updatingSwitch) return@setOnCheckedChangeListener
+            if (isChecked) startMonitoring() else SensorMonitorService.stop(this)
+            refreshStatus()
+        }
+
+        btnGrantShizuku.setOnClickListener { onShizukuButton() }
+        findViewById<View>(R.id.btnShizukuHelp).setOnClickListener { showShizukuHelp() }
+        usageChip.setOnClickListener {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         }
+        accessibilityChip.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+        notificationChip.setOnClickListener { requestNotificationPermission() }
 
-        updateShizukuStatus()
+        apps = loadApps()
+        bindMode(AppPreferences.blockMode(this))
+        reloadList()
+        maybeShowFirstLaunch()
 
-        // First launch recommendation
-        if (!prefs.getBoolean("recommendation_shown", false)) {
-            showRecommendationDialog(apps)
+        ShizukuClient.addListener(shizukuListener)
+        MonitorStateHub.addListener(stateListener)
+        if (AppPreferences.isMonitoringEnabled(this) && !SensorMonitorService.isRunning) {
+            if (ShizukuClient.isReady()) {
+                SensorMonitorService.start(this)
+            }
         }
     }
 
-    private fun showRecommendationDialog(apps: List<AppInfo>) {
-        val installedRecommended = apps.filter { RecommendedApps.packages.contains(it.packageName) }
-        if (installedRecommended.isEmpty()) {
-            prefs.edit().putBoolean("recommendation_shown", true).apply()
+    override fun onDestroy() {
+        ShizukuClient.removeListener(shizukuListener)
+        MonitorStateHub.removeListener(stateListener)
+        super.onDestroy()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshStatus()
+        ShizukuClient.bindIfPossible()
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_main, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when (item.itemId) {
+            R.id.action_shizuku_setup -> showShizukuHelp()
+            R.id.action_limitations -> showLimitations()
+            R.id.action_usage -> startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            R.id.action_accessibility -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            else -> return super.onOptionsItemSelected(item)
+        }
+        return true
+    }
+
+    private fun bindMode(mode: BlockMode) {
+        updatingMode = true
+        modeGroup.check(if (mode == BlockMode.GLOBAL) R.id.btnModeGlobal else R.id.btnModeList)
+        updatingMode = false
+        modeExplain.setText(
+            if (mode == BlockMode.GLOBAL) R.string.mode_global_explain else R.string.mode_list_explain
+        )
+        listTitle.setText(
+            if (mode == BlockMode.GLOBAL) R.string.list_title_allow else R.string.list_title_block
+        )
+    }
+
+    private fun reloadList() {
+        val mode = AppPreferences.blockMode(this)
+        val selected = if (mode == BlockMode.GLOBAL) {
+            AppPreferences.allowedPackages(this)
+        } else {
+            AppPreferences.blockedPackages(this)
+        }
+        adapter.submit(apps, selected, allowMode = mode == BlockMode.GLOBAL)
+    }
+
+    private fun startMonitoring() {
+        if (!ShizukuClient.isBinderAlive()) {
+            resetSwitch(false)
+            Toast.makeText(this, R.string.need_shizuku_to_monitor, Toast.LENGTH_LONG).show()
+            showShizukuHelp()
             return
         }
+        if (!ShizukuClient.hasPermission()) {
+            resetSwitch(false)
+            ShizukuClient.requestPermission()
+            Toast.makeText(this, R.string.need_shizuku_to_monitor, Toast.LENGTH_LONG).show()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 33 && !hasNotificationPermission()) {
+            pendingStart = true
+            requestNotificationPermission()
+            resetSwitch(false)
+            return
+        }
+        reallyStartMonitoring()
+    }
 
-        val names = installedRecommended.joinToString("\n") { "• ${it.label}" }
-        AlertDialog.Builder(this)
-            .setTitle("推薦開啟屏蔽")
-            .setMessage("偵測到以下國產購物、影片與地圖 App，建議預設開啟感測器屏蔽：\n\n$names\n\n是否一鍵加入封鎖名單？")
-            .setPositiveButton("一鍵開啟") { _, _ ->
-                installedRecommended.forEach { blocked.add(it.packageName) }
-                saveBlocked()
-                adapter.notifyDataSetChanged()
-                Toast.makeText(this, "已加入 ${installedRecommended.size} 個推薦 App", Toast.LENGTH_SHORT).show()
-                prefs.edit().putBoolean("recommendation_shown", true).apply()
+    private fun reallyStartMonitoring() {
+        ShizukuClient.bindIfPossible()
+        SensorMonitorService.start(this)
+        refreshStatus()
+    }
+
+    private fun resetSwitch(checked: Boolean) {
+        updatingSwitch = true
+        monitorSwitch.isChecked = checked
+        updatingSwitch = false
+    }
+
+    private fun onShizukuButton() {
+        if (!ShizukuClient.isBinderAlive()) {
+            val launch = packageManager.getLaunchIntentForPackage(ShizukuClient.SHIZUKU_PACKAGE)
+            if (launch != null) {
+                startActivity(launch)
+            } else {
+                showShizukuHelp()
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SHIZUKU_RELEASES)))
+                } catch (_: Exception) {
+                    Toast.makeText(this, R.string.toast_shizuku_not_installed, Toast.LENGTH_LONG).show()
+                }
             }
-            .setNegativeButton("稍後") { _, _ ->
-                prefs.edit().putBoolean("recommendation_shown", true).apply()
+        } else if (!ShizukuClient.hasPermission()) {
+            ShizukuClient.requestPermission()
+        } else {
+            ShizukuClient.bindIfPossible()
+            refreshStatus()
+        }
+    }
+
+    private fun refreshStatus() {
+        val bound = ShizukuClient.isBinderAlive()
+        val granted = ShizukuClient.hasPermission()
+        val ready = ShizukuClient.isReady()
+        statusShizuku.setText(
+            when {
+                ready -> R.string.status_shizuku_ready
+                bound && !granted -> R.string.status_shizuku_no_permission
+                bound -> R.string.status_shizuku_no_permission
+                else -> R.string.status_shizuku_disconnected
+            }
+        )
+        btnGrantShizuku.visibility = if (ready) View.GONE else View.VISIBLE
+        btnGrantShizuku.setText(
+            if (!bound) R.string.open_shizuku else R.string.grant_shizuku
+        )
+
+        val mode = MonitorStateHub.latest?.sensorMode ?: SensorServiceMode.Unknown
+        bindSensorMode(mode)
+        val monitoring = SensorMonitorService.isRunning || AppPreferences.isMonitoringEnabled(this)
+        statusMonitor.setText(if (SensorMonitorService.isRunning) R.string.status_monitoring_on else R.string.status_monitoring_off)
+        resetSwitch(SensorMonitorService.isRunning)
+        val fg = ForegroundTracker.current
+        if (fg.isNullOrBlank()) {
+            statusForeground.visibility = View.GONE
+        } else {
+            statusForeground.visibility = View.VISIBLE
+            statusForeground.text = getString(R.string.status_foreground, fg)
+        }
+        usageChip.isSelected = hasUsageAccess()
+        accessibilityChip.isSelected = WindowChangeAccessibilityService.isEnabled(this)
+        notificationChip.isSelected = hasNotificationPermission()
+        usageChip.setText(if (hasUsageAccess()) R.string.permission_usage_on else R.string.permission_usage_off)
+        accessibilityChip.setText(
+            if (WindowChangeAccessibilityService.isEnabled(this)) R.string.permission_accessibility_on
+            else R.string.permission_accessibility_off
+        )
+        notificationChip.setText(
+            if (hasNotificationPermission()) R.string.permission_notifications_on
+            else R.string.permission_notifications_off
+        )
+        if (monitoring && !SensorMonitorService.isRunning) {
+            // Preference says on, service not yet running (e.g. waiting for Shizuku after boot).
+            statusMonitor.setText(R.string.status_monitoring_pending)
+        }
+    }
+
+    private fun bindMonitorState(state: MonitorState) {
+        bindSensorMode(state.sensorMode)
+        refreshStatus()
+        if (state.usedPrivacyFallback) {
+            statusSensor.append("\n" + getString(R.string.status_privacy_fallback))
+        }
+    }
+
+    private fun bindSensorMode(mode: SensorServiceMode) {
+        statusSensor.text = when (mode) {
+            is SensorServiceMode.Normal -> getString(R.string.status_mode_normal)
+            is SensorServiceMode.Restricted -> {
+                val pkg = mode.packageName ?: getString(R.string.app_name)
+                getString(R.string.status_mode_restricted, pkg)
+            }
+            is SensorServiceMode.DataInjection -> getString(R.string.status_mode_unknown)
+            is SensorServiceMode.Unknown -> getString(R.string.status_mode_unknown)
+        }
+    }
+
+    private fun maybeShowFirstLaunch() {
+        if (AppPreferences.recommendationShown(this)) return
+        val targets = apps.filter { RecommendedApps.isBlockCandidate(it.packageName) }
+        if (targets.isEmpty()) {
+            AppPreferences.setRecommendationShown(this, true)
+            return
+        }
+        val names = targets.joinToString("\n") { "• ${it.label}" }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.first_run_title)
+            .setMessage(getString(R.string.first_run_message, names))
+            .setPositiveButton(R.string.first_run_add) { _, _ ->
+                val set = AppPreferences.blockedPackages(this).toMutableSet()
+                targets.forEach { set.add(it.packageName) }
+                AppPreferences.setBlockedPackages(this, set)
+                AppPreferences.setRecommendationShown(this, true)
+                if (AppPreferences.blockMode(this) == BlockMode.LIST) {
+                    reloadList()
+                }
+                Toast.makeText(
+                    this,
+                    getString(R.string.first_run_added, targets.size),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .setNegativeButton(R.string.first_run_later) { _, _ ->
+                AppPreferences.setRecommendationShown(this, true)
             }
             .setCancelable(false)
             .show()
     }
 
-    private fun updateShizukuStatus() {
-        val available = ShizukuSensorController.isShizukuAvailable()
-        statusText.text = if (available) "Shizuku 可用（精準偵測已啟用）" else "Shizuku 未連線"
+    private fun showShizukuHelp() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.shizuku_setup_title)
+            .setMessage(R.string.shizuku_setup_message)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNeutralButton(R.string.open_shizuku_github) { _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SHIZUKU_RELEASES)))
+                } catch (_: Exception) {
+                    Toast.makeText(this, R.string.toast_shizuku_not_installed, Toast.LENGTH_LONG).show()
+                }
+            }
+            .show()
+    }
+
+    private fun showLimitations() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.limitations_title)
+            .setMessage(R.string.limitations_message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun loadApps(): List<AppInfo> {
         val pm = packageManager
-        return pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            .filter { it.packageName != packageName }
-            .map {
-                AppInfo(
-                    packageName = it.packageName,
-                    label = pm.getApplicationLabel(it).toString()
-                )
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val seen = HashSet<String>()
+        val list = mutableListOf<AppInfo>()
+        val resolved = pm.queryIntentActivities(intent, 0)
+        for (ri in resolved) {
+            val pkg = ri.activityInfo.packageName
+            if (pkg == packageName || !seen.add(pkg)) continue
+            val appInfo = try {
+                pm.getApplicationInfo(pkg, 0)
+            } catch (_: PackageManager.NameNotFoundException) {
+                continue
             }
-            .sortedBy { it.label.lowercase() }
+            val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            list.add(
+                AppInfo(
+                    packageName = pkg,
+                    label = ri.loadLabel(pm).toString(),
+                    isSystem = isSystem,
+                    isRecommendedBlock = RecommendedApps.isBlockCandidate(pkg),
+                    isRecommendedAllow = RecommendedApps.isAllowCandidate(pkg)
+                )
+            )
+        }
+        return list.sortedWith(
+            compareBy<AppInfo> { it.isSystem }
+                .thenBy { it.label.lowercase() }
+        )
     }
 
-    private fun loadBlocked() {
-        blocked.clear()
-        blocked.addAll(prefs.getStringSet("blocked_packages", emptySet()) ?: emptySet())
+    private fun hasUsageAccess(): Boolean {
+        val appOps = getSystemService(AppOpsManager::class.java) ?: return false
+        val mode = appOps.checkOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            packageName
+        )
+        return mode == AppOpsManager.MODE_ALLOWED
     }
 
-    private fun saveBlocked() {
-        prefs.edit()
-            .putStringSet("blocked_packages", blocked)
-            .apply()
+    private fun hasNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return true
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 && !hasNotificationPermission()) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    companion object {
+        private const val SHIZUKU_RELEASES = "https://github.com/RikkaApps/Shizuku/releases"
     }
 }

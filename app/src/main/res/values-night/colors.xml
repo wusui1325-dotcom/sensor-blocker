@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_light">#0F1414</color>
+    <color name="surface_light">#1A2222</color>
+    <color name="badge_bg">#134E4A</color>
+    <color name="badge_text">#99F6E4</color>
+    <color name="outline">#2A3534</color>
+</resources>

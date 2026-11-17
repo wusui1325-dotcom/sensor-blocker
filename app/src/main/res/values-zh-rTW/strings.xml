@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">感測屏蔽</string>
+
+    <string name="status_shizuku_ready">Shizuku：已連線並已授權</string>
+    <string name="status_shizuku_no_permission">Shizuku：已連線，需要授權</string>
+    <string name="status_shizuku_disconnected">Shizuku：未連線</string>
+    <string name="status_mode_normal">SensorService：正常（所有應用可讀取感測器）</string>
+    <string name="status_mode_restricted">SensorService：已限制（僅 %1$s 可讀取感測器）</string>
+    <string name="status_mode_unknown">SensorService：未知（需要已執行的 Shizuku）</string>
+    <string name="status_privacy_fallback">已使用相機／麥克風隱私開關作為後備，此裝置上運動感測器仍可能可讀取。</string>
+    <string name="status_monitoring_on">監控：開</string>
+    <string name="status_monitoring_off">監控：關</string>
+    <string name="status_monitoring_pending">監控：開（等待 Shizuku）</string>
+    <string name="status_foreground">前景應用：%1$s</string>
+    <string name="monitoring_switch">監控</string>
+    <string name="grant_shizuku">授權 Shizuku</string>
+    <string name="open_shizuku">開啟 Shizuku</string>
+    <string name="open_shizuku_github">開啟 GitHub 發布頁</string>
+    <string name="shizuku_help">設定說明</string>
+
+    <string name="mode_section">工作模式</string>
+    <string name="mode_global">全域屏蔽</string>
+    <string name="mode_list">清單屏蔽</string>
+    <string name="mode_global_explain">建議用於攔截「搖一搖」廣告。預設讓運動感測器對所有應用不可用，只有你允許的應用（如地圖、體感遊戲）在前景時才能讀取。離開這些應用後，會自動恢復全域屏蔽。</string>
+    <string name="mode_list_explain">平時保持感測器正常；只有封鎖名單中的應用出現在前景時才屏蔽。此模式更依賴快速的前景偵測，建議開啟無障礙。</string>
+
+    <string name="list_title_allow">允許使用感測器的應用</string>
+    <string name="list_title_block">要屏蔽感測器的應用</string>
+    <string name="search_hint">搜尋應用</string>
+    <string name="badge_recommended_block">建議屏蔽</string>
+    <string name="badge_recommended_allow">建議允許</string>
+
+    <string name="permission_usage_on">使用情況存取：已開</string>
+    <string name="permission_usage_off">使用情況存取：未開</string>
+    <string name="permission_accessibility_on">無障礙：已開</string>
+    <string name="permission_accessibility_off">無障礙：未開（選用）</string>
+    <string name="permission_notifications_on">通知：已開</string>
+    <string name="permission_notifications_off">通知：未開</string>
+
+    <string name="accessibility_service_description">「感測屏蔽」僅用無障礙來判斷哪個應用進入前景，以便立刻啟用或解除 Android SensorService 的受限模式。這是選用功能，但在「清單屏蔽」下，以及從地圖或遊戲返回後迅速恢復全域屏蔽時更即時。本服務不會讀取螢幕文字，也不會代替你點選或手勢操作。</string>
+    <string name="accessibility_label">前景應用偵測</string>
+
+    <string name="first_run_title">建議加入封鎖名單的應用</string>
+    <string name="first_run_message">偵測到這些經常出現「搖一搖」廣告的購物、短影片和新聞應用：\n\n%1$s\n\n目前預設的「全域屏蔽」已經會攔截它們。若你之後改用「清單屏蔽」，可以一鍵把它們加入封鎖名單。\n\n地圖、支付寶、微信和 QQ 不會被自動勾選——地圖需要指南針和陀螺儀。</string>
+    <string name="first_run_add">加入封鎖名單</string>
+    <string name="first_run_later">稍後再說</string>
+    <string name="first_run_added">已將 %1$d 個應用加入封鎖名單</string>
+
+    <string name="shizuku_setup_title">如何啟動 Shizuku</string>
+    <string name="shizuku_setup_message">本應用需要 Shizuku（相當於 ADB shell 權限），不需要 root。\n\n1. 請從官方 GitHub 發布頁安裝 Shizuku：https://github.com/RikkaApps/Shizuku/releases\n   在中國大陸使用 Google Play 可能不便，建議直接使用 GitHub。\n2. Android 11 及以上：在系統設定中開啟「開發人員選項」→「無線偵錯」，再依 Shizuku 應用內說明，用無線偵錯啟動並完成配對。\n3. 回到本應用，點選「授權 Shizuku」並允許。\n4. 重新開機後，無線偵錯通常會關閉，需要重新啟動 Shizuku。\n\n如果 Shizuku 未執行或未授權，本應用無法變更 SensorService 模式。</string>
+
+    <string name="limitations_title">使用限制</string>
+    <string name="limitations_message">• 本應用只控制運動感測器（加速度計、陀螺儀、磁力計）的讀取，不是通用廣告屏蔽工具。不使用這些感測器的廣告仍會出現。\n• 主要機制是 Android 公開的 SensorService 受限模式（dumpsys sensorservice restrict）。部分廠商系統可能改動或隱藏該服務，不能保證每台裝置都有效。\n• 重新開機後受限模式通常會被清除。若監控是開啟的，待 Shizuku 再次執行後，本應用會嘗試重新套用。\n• 在「全域屏蔽」下若未把地圖、體感遊戲加入允許清單，導航指南針或體感操作會失效。\n• 需要 Shizuku 或無線偵錯。不需要 root、Xposed，也不需要 VPN 或中間人代理。</string>
+
+    <string name="need_shizuku_to_monitor">請先啟動並授權 Shizuku，再開啟監控。</string>
+    <string name="need_notifications">背景監控需要通知權限。</string>
+    <string name="toast_shizuku_not_installed">尚未安裝 Shizuku，請查看設定說明。</string>
+
+    <string name="menu_setup">Shizuku 設定說明</string>
+    <string name="menu_limitations">使用限制</string>
+    <string name="menu_usage_settings">開啟使用情況存取設定</string>
+    <string name="menu_accessibility_settings">開啟無障礙設定</string>
+
+    <string name="notif_channel_name">感測器監控</string>
+    <string name="notif_title">感測屏蔽</string>
+    <string name="notif_monitoring">監控中…</string>
+    <string name="notif_waiting_shizuku">正在等待 Shizuku…</string>
+    <string name="notif_restricted">感測器已限制為僅 %1$s 可讀取</string>
+    <string name="notif_normal">SensorService 處於正常模式</string>
+</resources>

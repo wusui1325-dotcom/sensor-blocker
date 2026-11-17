@@ -1,3 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Sensor Blocker</string>
+
+    <string name="status_shizuku_ready">Shizuku: connected and authorized</string>
+    <string name="status_shizuku_no_permission">Shizuku: connected, permission required</string>
+    <string name="status_shizuku_disconnected">Shizuku: not connected</string>
+    <string name="status_mode_normal">SensorService: NORMAL (all apps can read sensors)</string>
+    <string name="status_mode_restricted">SensorService: RESTRICTED (only %1$s may read sensors)</string>
+    <string name="status_mode_unknown">SensorService: unknown (needs a running Shizuku)</string>
+    <string name="status_privacy_fallback">A camera/microphone privacy fallback was used; motion sensors may still be readable on this device.</string>
+    <string name="status_monitoring_on">Monitoring: on</string>
+    <string name="status_monitoring_off">Monitoring: off</string>
+    <string name="status_monitoring_pending">Monitoring: on (waiting for Shizuku)</string>
+    <string name="status_foreground">Foreground: %1$s</string>
+    <string name="monitoring_switch">Monitoring</string>
+    <string name="grant_shizuku">Authorize Shizuku</string>
+    <string name="open_shizuku">Open Shizuku</string>
+    <string name="open_shizuku_github">Open GitHub releases</string>
+    <string name="shizuku_help">Setup guide</string>
+
+    <string name="mode_section">Mode</string>
+    <string name="mode_global">Global block</string>
+    <string name="mode_list">List block</string>
+    <string name="mode_global_explain">Recommended for blocking “shake” ads. Motion sensors stay blocked for every app, except apps you allow (maps, motion games). When an allowed app is in the foreground, only that app can use sensors. When it leaves, the global block returns.</string>
+    <string name="mode_list_explain">Sensors stay normal until a blocked app comes to the foreground. Then only Sensor Blocker may read sensors, so the blocked app cannot. This needs fast foreground detection — Accessibility is recommended.</string>
+
+    <string name="list_title_allow">Apps allowed to use sensors</string>
+    <string name="list_title_block">Apps blocked from sensors</string>
+    <string name="search_hint">Search apps</string>
+    <string name="badge_recommended_block">Suggested block</string>
+    <string name="badge_recommended_allow">Suggested allow</string>
+
+    <string name="permission_usage_on">Usage access: on</string>
+    <string name="permission_usage_off">Usage access: off</string>
+    <string name="permission_accessibility_on">Accessibility: on</string>
+    <string name="permission_accessibility_off">Accessibility: off (optional)</string>
+    <string name="permission_notifications_on">Notifications: on</string>
+    <string name="permission_notifications_off">Notifications: off</string>
+
+    <string name="accessibility_service_description">Sensor Blocker uses Accessibility only to see which app moved to the foreground, so it can apply or lift Android SensorService restricted mode immediately. This is optional, but recommended for list-block mode and for quickly restoring the global block after you leave a map or game. It does not read on-screen text, and it does not perform clicks or gestures.</string>
+    <string name="accessibility_label">Foreground app detection</string>
+
+    <string name="first_run_title">Suggested apps to block</string>
+    <string name="first_run_message">These shopping, short-video, and news apps often use “shake” ads:\n\n%1$s\n\nIn Global block mode they are already covered. If you later switch to List block, you can add them to the block list in one tap.\n\nMaps, Alipay, WeChat, and QQ are not selected automatically — maps need the compass and gyroscope.</string>
+    <string name="first_run_add">Add to block list</string>
+    <string name="first_run_later">Not now</string>
+    <string name="first_run_added">Added %1$d app(s) to the block list</string>
+
+    <string name="shizuku_setup_title">Set up Shizuku</string>
+    <string name="shizuku_setup_message">This app needs Shizuku (ADB shell privileges). Root is not required.\n\n1. Install Shizuku from the official GitHub releases: https://github.com/RikkaApps/Shizuku/releases\n   Google Play may be hard to use in mainland China; prefer GitHub.\n2. On Android 11 or later, enable Developer options → Wireless debugging, then start Shizuku with wireless debugging (follow the pairing steps inside Shizuku).\n3. Return here and tap “Authorize Shizuku”.\n4. After a reboot, start Shizuku again (wireless debugging is usually off after reboot).\n\nWithout a running, authorized Shizuku, this app cannot change SensorService mode.</string>
+
+    <string name="limitations_title">Limitations</string>
+    <string name="limitations_message">• This controls motion-sensor access (accelerometer, gyroscope, magnetometer). It is not a general ad blocker; ads that do not use those sensors will still appear.\n• It uses the public Android SensorService restricted mode (dumpsys sensorservice restrict). Some OEMs change or hide this service; it is not guaranteed on every device.\n• A reboot usually clears restricted mode. If monitoring is on, the app will try to re-apply it after boot once Shizuku is running again.\n• If you allowlist nothing in Global mode, navigation compass and motion games will not work until you allow those apps.\n• Shizuku or wireless debugging is required. This app does not need root, Xposed, or a VPN / MITM proxy.</string>
+
+    <string name="need_shizuku_to_monitor">Start and authorize Shizuku before turning monitoring on.</string>
+    <string name="need_notifications">Notification permission is required for the background monitor.</string>
+    <string name="toast_shizuku_not_installed">Shizuku is not installed. See the setup guide.</string>
+
+    <string name="menu_setup">Shizuku setup</string>
+    <string name="menu_limitations">Limitations</string>
+    <string name="menu_usage_settings">Usage access settings</string>
+    <string name="menu_accessibility_settings">Accessibility settings</string>
+
+    <string name="notif_channel_name">Sensor monitoring</string>
+    <string name="notif_title">Sensor Blocker</string>
+    <string name="notif_monitoring">Monitoring…</string>
+    <string name="notif_waiting_shizuku">Waiting for Shizuku…</string>
+    <string name="notif_restricted">Sensors restricted to %1$s</string>
+    <string name="notif_normal">SensorService is in normal mode</string>
 </resources>
