@@ -4,26 +4,41 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.SystemClock
 import com.wusper.sensorblocker.shell.IShellService
 import com.wusper.sensorblocker.shell.ShellUserService
 import rikka.shizuku.Shizuku
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 object ShizukuClient {
     const val REQUEST_CODE_PERMISSION = 1001
     const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
     private const val BIND_TIMEOUT_MS = 4_000L
+    private const val MAIN_DISPATCH_TIMEOUT_MS = 2_000L
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
+    private val readyWaiters = CopyOnWriteArrayList<CountDownLatch>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     @Volatile var shell: IShellService? = null
         private set
     @Volatile private var bound = false
     @Volatile private var bindStartedAt = 0L
+    @Volatile var lastBindError: String? = null
+        private set
+    @Volatile var lastPermissionError: String? = null
+        private set
     private var appContext: Context? = null
 
     private val binderReceived = Shizuku.OnBinderReceivedListener {
+        lastPermissionError = null
+        permissionState()
         notifyChanged()
         bindIfPossible()
     }
@@ -31,10 +46,14 @@ object ShizukuClient {
     private val binderDead = Shizuku.OnBinderDeadListener {
         shell = null
         bound = false
+        bindStartedAt = 0L
+        lastBindError = "Shizuku binder died"
+        releaseWaiters()
         notifyChanged()
     }
 
     private val permissionListener = Shizuku.OnRequestPermissionResultListener { _, _ ->
+        lastPermissionError = null
         notifyChanged()
         bindIfPossible()
     }
@@ -42,12 +61,17 @@ object ShizukuClient {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
             shell = IShellService.Stub.asInterface(service)
+            lastBindError = null
+            releaseWaiters()
             notifyChanged()
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
             shell = null
             bound = false
+            bindStartedAt = 0L
+            lastBindError = "UserService disconnected"
+            releaseWaiters()
             notifyChanged()
         }
     }
@@ -72,6 +96,10 @@ object ShizukuClient {
         listeners.forEach { it() }
     }
 
+    private fun releaseWaiters() {
+        readyWaiters.forEach { it.countDown() }
+    }
+
     fun isBinderAlive(): Boolean {
         return try {
             Shizuku.pingBinder()
@@ -80,15 +108,44 @@ object ShizukuClient {
         }
     }
 
-    fun hasPermission(): Boolean {
+    fun permissionState(): ShizukuPermissionState {
+        if (!isBinderAlive()) return ShizukuPermissionState.NO_BINDER
         return try {
-            isBinderAlive() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+            checkPermissionOnce()
         } catch (_: Throwable) {
-            false
+            // Binder may have just become sticky; retry once before surfacing an error.
+            try {
+                if (!isBinderAlive()) return ShizukuPermissionState.NO_BINDER
+                checkPermissionOnce()
+            } catch (retry: Throwable) {
+                lastPermissionError = shortError(retry)
+                ShizukuPermissionState.CHECK_FAILED
+            }
         }
     }
 
+    private fun checkPermissionOnce(): ShizukuPermissionState {
+        val granted = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        lastPermissionError = null
+        return if (granted) ShizukuPermissionState.GRANTED else ShizukuPermissionState.DENIED
+    }
+
+    fun hasPermission(): Boolean = permissionState() == ShizukuPermissionState.GRANTED
+
     fun isReady(): Boolean = hasPermission() && shell != null
+
+    fun snapshot(): ShizukuSnapshot {
+        val now = SystemClock.elapsedRealtime()
+        val inProgress = bound && shell == null && (now - bindStartedAt) < BIND_TIMEOUT_MS
+        return ShizukuSnapshot(
+            binderAlive = isBinderAlive(),
+            permission = permissionState(),
+            shellConnected = shell != null,
+            bindInProgress = inProgress,
+            lastBindError = lastBindError,
+            lastPermissionError = lastPermissionError
+        )
+    }
 
     fun requestPermission() {
         if (!isBinderAlive()) return
@@ -97,41 +154,123 @@ object ShizukuClient {
             if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
                 Shizuku.requestPermission(REQUEST_CODE_PERMISSION)
             } else {
-                bindIfPossible()
+                bindIfPossible(force = true)
             }
-        } catch (_: Throwable) {
-            // Shizuku not present
+        } catch (t: Throwable) {
+            lastPermissionError = shortError(t)
+            notifyChanged()
         }
     }
 
-    @Synchronized
     fun bindIfPossible(force: Boolean = false) {
+        runOnMain(wait = false) { bindOnMain(force) }
+    }
+
+    /**
+     * Bind the UserService on the main thread. Background callers wait until
+     * onServiceConnected, a bind failure, or [timeoutMs]. The main thread never
+     * blocks waiting for the connection, to avoid ANRs.
+     */
+    fun bindAndWait(timeoutMs: Long = BIND_TIMEOUT_MS): Boolean {
+        if (isReady()) return true
+        if (!MainThreadBindPolicy.mayBlockForConnection(isMainThread())) {
+            bindOnMain(force = false)
+            return isReady()
+        }
+        val latch = CountDownLatch(1)
+        readyWaiters.add(latch)
+        try {
+            runOnMain(wait = true, timeoutMs = MAIN_DISPATCH_TIMEOUT_MS) { bindOnMain(force = false) }
+            if (isReady()) return true
+            latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+            if (!isReady() && lastBindError == null) {
+                lastBindError = "UserService did not connect"
+                notifyChanged()
+            }
+            return isReady()
+        } finally {
+            readyWaiters.remove(latch)
+        }
+    }
+
+    fun unbind() {
+        runOnMain(wait = false) { unbindOnMain() }
+    }
+
+    fun unbindAndWait(timeoutMs: Long = MAIN_DISPATCH_TIMEOUT_MS) {
+        if (isMainThread()) {
+            unbindOnMain()
+            return
+        }
+        runOnMain(wait = true, timeoutMs = timeoutMs) { unbindOnMain() }
+    }
+
+    private fun isMainThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
+
+    private fun runOnMain(wait: Boolean, timeoutMs: Long = MAIN_DISPATCH_TIMEOUT_MS, block: () -> Unit) {
+        when (MainThreadBindPolicy.action(isMainThread(), wait)) {
+            MainThreadAction.RUN_INLINE -> block()
+            MainThreadAction.POST -> mainHandler.post(block)
+            MainThreadAction.POST_AND_WAIT -> {
+                val done = CountDownLatch(1)
+                val error = AtomicReference<Throwable>()
+                mainHandler.post {
+                    try {
+                        block()
+                    } catch (t: Throwable) {
+                        error.set(t)
+                    } finally {
+                        done.countDown()
+                    }
+                }
+                if (!done.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+                    lastBindError = "main-thread dispatch timed out"
+                    notifyChanged()
+                    return
+                }
+                error.get()?.let { t ->
+                    lastBindError = shortError(t)
+                    notifyChanged()
+                }
+            }
+        }
+    }
+
+    private fun bindOnMain(force: Boolean) {
         val ctx = appContext ?: return
+        if (!isMainThread()) {
+            lastBindError = "bind called off the main thread"
+            notifyChanged()
+            return
+        }
         if (!hasPermission()) return
         if (shell != null && !force) return
         val now = SystemClock.elapsedRealtime()
         if (bound && !force) {
             if (now - bindStartedAt < BIND_TIMEOUT_MS) return
-            // bind was set but onServiceConnected never arrived; reset and retry
-            unbindLocked(ctx)
+            lastBindError = "UserService did not connect"
+            unbindOnMain()
         }
-        val args = userServiceArgs(ctx)
+        if (force && (bound || shell != null)) {
+            unbindOnMain()
+        }
+        lastBindError = null
         try {
-            Shizuku.bindUserService(args, connection)
+            Shizuku.bindUserService(userServiceArgs(ctx), connection)
             bound = true
-            bindStartedAt = now
-        } catch (_: Throwable) {
+            bindStartedAt = SystemClock.elapsedRealtime()
+            notifyChanged()
+        } catch (t: Throwable) {
             bound = false
+            bindStartedAt = 0L
+            lastBindError = shortError(t)
+            releaseWaiters()
+            notifyChanged()
         }
     }
 
-    @Synchronized
-    fun unbind() {
+    private fun unbindOnMain() {
         val ctx = appContext ?: return
-        unbindLocked(ctx)
-    }
-
-    private fun unbindLocked(ctx: Context) {
         try {
             if (bound) {
                 Shizuku.unbindUserService(userServiceArgs(ctx), connection, true)
@@ -167,5 +306,11 @@ object ShizukuClient {
         } catch (e: Exception) {
             ShellResult(-1, e.message ?: "exec failed")
         }
+    }
+
+    private fun shortError(t: Throwable): String {
+        val name = t.javaClass.simpleName.ifBlank { t.javaClass.name }
+        val msg = t.message?.trim().orEmpty()
+        return if (msg.isEmpty()) name else "$name: ${msg.take(80)}"
     }
 }

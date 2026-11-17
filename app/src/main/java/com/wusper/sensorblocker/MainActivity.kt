@@ -269,30 +269,47 @@ class MainActivity : AppCompatActivity() {
             }
         } else if (!ShizukuClient.hasPermission()) {
             ShizukuClient.requestPermission()
+            refreshStatus()
         } else {
-            ShizukuClient.bindIfPossible()
+            // Already authorized in Shizuku: bind immediately instead of looking like a no-op.
+            ShizukuClient.bindIfPossible(force = true)
             refreshStatus()
         }
     }
 
     private fun refreshStatus() {
-        val bound = ShizukuClient.isBinderAlive()
-        val granted = ShizukuClient.hasPermission()
-        val ready = ShizukuClient.isReady()
-        statusShizuku.setText(
-            when {
-                ready -> R.string.status_shizuku_ready
-                bound && !granted -> R.string.status_shizuku_no_permission
-                bound -> R.string.status_shizuku_no_permission
-                else -> R.string.status_shizuku_disconnected
+        val snapshot = ShizukuClient.snapshot()
+        val ui = ShizukuUiStatus.state(snapshot)
+        val unknownReason = getString(R.string.status_shizuku_error_unknown)
+        statusShizuku.text = when (ui) {
+            ShizukuUiState.READY -> getString(R.string.status_shizuku_ready)
+            ShizukuUiState.NEED_PERMISSION -> getString(R.string.status_shizuku_no_permission)
+            ShizukuUiState.DISCONNECTED -> getString(R.string.status_shizuku_disconnected)
+            ShizukuUiState.BINDING -> getString(R.string.status_shizuku_binding)
+            ShizukuUiState.BIND_FAILED -> getString(
+                R.string.status_shizuku_bind_failed,
+                snapshot.lastBindError ?: unknownReason
+            )
+            ShizukuUiState.PERMISSION_ERROR -> getString(
+                R.string.status_shizuku_permission_error,
+                snapshot.lastPermissionError ?: unknownReason
+            )
+        }
+        btnGrantShizuku.visibility = if (ui == ShizukuUiState.READY) View.GONE else View.VISIBLE
+        btnGrantShizuku.setText(
+            when (ui) {
+                ShizukuUiState.DISCONNECTED -> R.string.open_shizuku
+                ShizukuUiState.NEED_PERMISSION, ShizukuUiState.PERMISSION_ERROR -> R.string.grant_shizuku
+                else -> R.string.retry_bind_shizuku
             }
         )
-        btnGrantShizuku.visibility = if (ready) View.GONE else View.VISIBLE
-        btnGrantShizuku.setText(
-            if (!bound) R.string.open_shizuku else R.string.grant_shizuku
-        )
 
-        val mode = MonitorStateHub.latest?.sensorMode ?: SensorServiceMode.Unknown
+        val ready = ui == ShizukuUiState.READY
+        val mode = if (ready) {
+            MonitorStateHub.latest?.sensorMode ?: SensorServiceMode.Unknown
+        } else {
+            SensorServiceMode.Unknown
+        }
         bindSensorMode(mode)
         val monitoring = SensorMonitorService.isRunning || AppPreferences.isMonitoringEnabled(this)
         statusMonitor.setText(if (SensorMonitorService.isRunning) R.string.status_monitoring_on else R.string.status_monitoring_off)

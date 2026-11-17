@@ -5,6 +5,10 @@
     <string name="status_shizuku_ready">Shizuku: connected and authorized</string>
     <string name="status_shizuku_no_permission">Shizuku: connected, permission required</string>
     <string name="status_shizuku_disconnected">Shizuku: not connected</string>
+    <string name="status_shizuku_binding">Shizuku: authorized, connecting to the privileged service…</string>
+    <string name="status_shizuku_bind_failed">Shizuku: authorized, but the privileged service failed to start (%1$s)</string>
+    <string name="status_shizuku_permission_error">Shizuku: connected, but the permission check failed (%1$s)</string>
+    <string name="status_shizuku_error_unknown">unknown error</string>
     <string name="status_mode_normal">SensorService: NORMAL (all apps can read sensors)</string>
     <string name="status_mode_restricted">SensorService: RESTRICTED (only %1$s may read sensors)</string>
     <string name="status_mode_unknown">SensorService: unknown (needs a running Shizuku)</string>
@@ -15,6 +19,7 @@
     <string name="status_foreground">Foreground: %1$s</string>
     <string name="monitoring_switch">Monitoring</string>
     <string name="grant_shizuku">Authorize Shizuku</string>
+    <string name="retry_bind_shizuku">Retry Shizuku service</string>
     <string name="open_shizuku">Open Shizuku</string>
     <string name="open_shizuku_github">Open GitHub releases</string>
     <string name="shizuku_help">Setup guide</string>

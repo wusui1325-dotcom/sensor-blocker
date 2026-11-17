@@ -127,20 +127,18 @@ class SensorMonitorService : Service() {
         }
         ShizukuClient.cancel()
         try {
-            val future = applyExecutor.submit<Boolean> {
-                var ok = false
-                if (!ShizukuClient.isReady()) {
-                    ShizukuClient.bindIfPossible(force = true)
+            // Do not bind/unbind from this worker: onDestroy runs on the
+            // main thread and waits here, so a worker that posts back to
+            // main and waits would deadlock.
+            if (ShizukuClient.isReady()) {
+                val future = applyExecutor.submit<Boolean> {
+                    controller.apply(DesiredState.Normal, force = true)
                 }
-                if (ShizukuClient.isReady()) {
-                    ok = controller.apply(DesiredState.Normal, force = true)
-                }
-                ShizukuClient.unbind()
-                ok
+                future.get(5, TimeUnit.SECONDS)
             }
-            future.get(5, TimeUnit.SECONDS)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to restore sensors on stop", e)
+        } finally {
             try {
                 ShizukuClient.unbind()
             } catch (_: Throwable) {
@@ -201,10 +199,16 @@ class SensorMonitorService : Service() {
     private fun applyPolicy(reason: String, force: Boolean = false) {
         if (!running && reason != "start") return
         if (!ShizukuClient.isReady()) {
-            ShizukuClient.bindIfPossible()
-            handler.post { updateNotification(getString(R.string.notif_waiting_shizuku)) }
-            publishState()
-            return
+            if (reason == "start") {
+                ShizukuClient.bindAndWait()
+            } else {
+                ShizukuClient.bindIfPossible()
+            }
+            if (!ShizukuClient.isReady()) {
+                handler.post { updateNotification(getString(R.string.notif_waiting_shizuku)) }
+                publishState()
+                return
+            }
         }
         val desired = BlockPolicy.decide(
             mode = AppPreferences.blockMode(this),
@@ -246,7 +250,7 @@ class SensorMonitorService : Service() {
                 shizukuReady = ShizukuClient.isReady(),
                 shizukuBound = ShizukuClient.isBinderAlive(),
                 shizukuPermission = ShizukuClient.hasPermission(),
-                sensorMode = controller.lastMode,
+                sensorMode = if (ShizukuClient.isReady()) controller.lastMode else SensorServiceMode.Unknown,
                 foregroundPackage = ForegroundTracker.current,
                 usedPrivacyFallback = controller.usedPrivacyFallback
             )

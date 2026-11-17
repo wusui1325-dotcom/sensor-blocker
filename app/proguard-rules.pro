@@ -7,9 +7,15 @@
 
 # Shizuku UserService is started by class name / reflection, not the manifest.
 -keep class com.wusper.sensorblocker.shell.** { *; }
--keepclassmembers class com.wusper.sensorblocker.shell.ShellUserService {
+-keep public class com.wusper.sensorblocker.shell.ShellUserService {
     public <init>();
 }
+-keep class com.wusper.sensorblocker.shell.IShellService { *; }
+-keep class com.wusper.sensorblocker.shell.IShellService$Stub { *; }
+-keep class com.wusper.sensorblocker.shell.IShellService$Stub$Proxy { *; }
+
+# Provider is declared in the manifest; keep the class name explicitly.
+-keep class rikka.shizuku.ShizukuProvider { *; }
 
 # AIDL stubs used across the app / Shizuku process boundary.
 -keep class * implements android.os.IInterface { *; }

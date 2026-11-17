@@ -5,6 +5,10 @@
     <string name="status_shizuku_ready">Shizuku：已連線並已授權</string>
     <string name="status_shizuku_no_permission">Shizuku：已連線，需要授權</string>
     <string name="status_shizuku_disconnected">Shizuku：未連線</string>
+    <string name="status_shizuku_binding">Shizuku：已授權，正在連接特權服務…</string>
+    <string name="status_shizuku_bind_failed">Shizuku：已授權，但特權服務綁定失敗（%1$s）</string>
+    <string name="status_shizuku_permission_error">Shizuku：已連線，但權限檢查失敗（%1$s）</string>
+    <string name="status_shizuku_error_unknown">未知錯誤</string>
     <string name="status_mode_normal">SensorService：正常（所有應用可讀取感測器）</string>
     <string name="status_mode_restricted">SensorService：已限制（僅 %1$s 可讀取感測器）</string>
     <string name="status_mode_unknown">SensorService：未知（需要已執行的 Shizuku）</string>
@@ -15,6 +19,7 @@
     <string name="status_foreground">前景應用：%1$s</string>
     <string name="monitoring_switch">監控</string>
     <string name="grant_shizuku">授權 Shizuku</string>
+    <string name="retry_bind_shizuku">重新綁定服務</string>
     <string name="open_shizuku">開啟 Shizuku</string>
     <string name="open_shizuku_github">開啟 GitHub 發布頁</string>
     <string name="shizuku_help">設定說明</string>
